@@ -8,6 +8,11 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+
+#include "common/common.h"
+#define WINDOW_WIDTH 1280
+#define WINDOW_HEIGHT 720
+
 /*
 TODO:
 make a single define file for stuff like PORT, SERVER_IP, MAX_PLAYERS, sent structs (Player), etc
@@ -20,19 +25,11 @@ some ui
 polish graphics
 */
 
-#define PORT 8080
-#define SERVER_IP "127.0.0.1"
-#define MAX_CLIENTS 5
-#define DATA_SEND_SLEEP_TIME 5000
+
 
 // server debug info
 #define PRINT_RECEIVED_INFO 0
 #define PRINT_SENT_PLAYER_UPDATE 0
-
-typedef struct {
-    int id;
-    int x, y;
-} Player;
 
 // SDL
 static SDL_Window *window = NULL;
@@ -119,7 +116,7 @@ void render_players() {
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (players[i].id != 0) {
-            SDL_FRect dstRect = { (float)players[i].x, (float)players[i].y, 50.0f, 50.0f };
+            SDL_FRect dstRect = { (float)players[i].x, (float)players[i].y, 128.0f, 64.0f };
             SDL_RenderTexture(renderer, player_texture, NULL, &dstRect);
         }
     }
@@ -134,12 +131,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         return SDL_APP_FAILURE;
     }
 
-    if (SDL_CreateWindowAndRenderer("Multiplayer Game Client", 640, 480, 0, &window, &renderer) == false) {
+    if (SDL_CreateWindowAndRenderer("Multiplayer Game Client", WINDOW_WIDTH, WINDOW_HEIGHT, 0, &window, &renderer) == false) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Couldn't create window/renderer!", SDL_GetError(), NULL);
         return SDL_APP_FAILURE;
     }
 
-    SDL_Surface *surface = SDL_LoadBMP("../resources/sprites/examplesprite.bmp");
+    SDL_Surface *surface = SDL_LoadBMP("../resources/sprites/boat-01.bmp");
     if (!surface) {
         fprintf(stderr, "Could not load BMP image: %s\n", SDL_GetError());
     }

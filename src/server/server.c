@@ -8,15 +8,11 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 
-#define PORT 8080
-#define MAX_CLIENTS 5
+#include "common/common.h"
+
  //NOTE: may need to find an optimal delay, or interpolate or sth if needed for performance, above 20 is too much
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
 
-typedef struct {
-    int id;
-    int x, y;
-} Player;
 
 // global player state
 Player players[MAX_CLIENTS];
