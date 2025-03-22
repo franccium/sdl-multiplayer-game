@@ -13,17 +13,18 @@ set(COMMON_SOURCES
 )
 
 add_executable(server
+    ${COMMON_SOURCES}
     src/server/server.c
     src/server/server.h
-    ${COMMON_SOURCES}
 )
 
 add_executable(client
+    ${COMMON_SOURCES}
     src/client/client.c
     src/client/client.h
+    src/common/client_common.h
     src/game_window.c
     src/game_window.h
-    ${COMMON_SOURCES}
 )
 
 target_link_libraries(client PRIVATE SDL3::SDL3)

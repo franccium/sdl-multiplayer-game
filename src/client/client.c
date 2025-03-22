@@ -10,6 +10,7 @@
 #include <netinet/tcp.h>
 
 #include "common/common.h"
+#include "client.h"
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
@@ -25,8 +26,6 @@ some ui
 polish graphics
 */
 
-
-
 // server debug info
 #define PRINT_RECEIVED_INFO 0
 #define PRINT_SENT_PLAYER_UPDATE 0
@@ -38,7 +37,6 @@ static SDL_Renderer *renderer = NULL;
 Player players[MAX_CLIENTS];
 pthread_mutex_t players_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static Player local_player = {0, 100, 100};
 SDL_Texture* player_texture = NULL;
 
 
@@ -50,6 +48,68 @@ int check(int exp, const char *msg) {
     return exp;
 }
 
+#if USE_FRAMES
+void receive_server_data(int client_socket) {
+    //TODO: data frames
+    ReceivedDataFrame received_data;
+    int bytes_received = recv(client_socket, &received_data, sizeof(ReceivedDataFrame), 0);
+    printf("Received %d, el1: %d, el2: %d\n", received_data.header, received_data.el1, received_data.el2);
+    switch(received_data.header) {
+        case PLAYER_STATIC_DATA_HEADER:
+            PlayerStaticData data;
+            data.id = received_data.el1;
+            data.sprite_id = received_data.el2;
+            player_data[data.id].id = data.id;
+            player_data[data.id].sprite_id = data.sprite_id;
+            printf("Received static data for player ID: %d, Sprite ID: %d\n", data.id, data.sprite_id);
+            break;
+
+        case PLAYER_DYNAMIC_DATA_HEADER:
+            //TODO: right now we just update the whole array
+            /*Player updated_players[MAX_CLIENTS];
+            bytes_received = recv(client_socket, updated_players, sizeof(updated_players), 0);
+            if (bytes_received <= 0) {
+                perror("Receive failed");
+                break;
+            }
+            memcpy(players, updated_players, sizeof(updated_players));
+            break;*/
+            if (bytes_received <= 0) {
+                perror("Receive failed");
+                break;
+            }
+            memcpy(&players[received_data.el1], &received_data, sizeof(received_data));
+            break;
+    }
+}
+#else
+void receive_server_data(int client_socket) {
+    //TODO: data frames
+    ReceivedDataFrame received_data;
+    int bytes_received = recv(client_socket, &received_data, sizeof(ReceivedDataFrame), 0);
+    printf("Received %d\n", received_data.header);
+    switch(received_data.header) {
+        case PLAYER_STATIC_DATA_HEADER:
+            PlayerStaticData data;
+            bytes_received = recv(client_socket, &data, sizeof(PlayerStaticData), 0);
+            player_data[data.id].id = data.id;
+            player_data[data.id].sprite_id = data.sprite_id;
+            printf("Received static data for player ID: %d, Sprite ID: %d\n", data.id, data.sprite_id);
+            break;
+
+        case PLAYER_DYNAMIC_DATA_HEADER:
+            //TODO: right now we just update the whole array
+            Player updated_players[MAX_CLIENTS];
+            bytes_received = recv(client_socket, updated_players, sizeof(updated_players), 0);
+            if (bytes_received <= 0) {
+                perror("Receive failed");
+                break;
+            }
+            memcpy(players, updated_players, sizeof(updated_players));
+            break;
+    }
+}
+#endif
 
 void *client_communication(void *arg) {
     int client_socket = *(int *)arg;
@@ -62,7 +122,7 @@ void *client_communication(void *arg) {
     int assigned_id = 0;
     int bytes_received = recv(client_socket, &assigned_id, sizeof(int), 0);
     if (bytes_received <= 0) {
-        perror("Failed to receive assigned ID");
+        perror("Failed to receive an assigned ID");
         close(client_socket);
         return NULL;
     }
@@ -75,13 +135,7 @@ void *client_communication(void *arg) {
             break;
         }
 
-        Player updated_players[MAX_CLIENTS];
-        bytes_received = recv(client_socket, updated_players, sizeof(updated_players), 0);
-        if (bytes_received <= 0) {
-            perror("Receive failed");
-            break;
-        }
-        memcpy(players, updated_players, sizeof(updated_players));
+        receive_server_data(client_socket);
 
         usleep(DATA_SEND_SLEEP_TIME);
     }
@@ -115,7 +169,7 @@ void render_players() {
     SDL_RenderClear(renderer);
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (players[i].id != 0) {
+        if (players[i].id != INVALID_PLAYER_ID) {
             SDL_FRect dstRect = { (float)players[i].x, (float)players[i].y, 128.0f, 64.0f };
             SDL_RenderTexture(renderer, player_texture, NULL, &dstRect);
         }

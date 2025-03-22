@@ -16,9 +16,11 @@
 
 // global player state
 Player players[MAX_CLIENTS];
+PlayerStaticData player_data[MAX_CLIENTS];
 int client_sockets[MAX_CLIENTS];
 pthread_mutex_t players_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+int connected_clients_count = 0;
 
 int check(int exp, const char *msg) {
     if (exp == -1) {
@@ -28,6 +30,61 @@ int check(int exp, const char *msg) {
     return exp;
 }
 
+#if USE_FRAMES
+void broadcast_players() {
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] != 0) {
+            /*
+            players->header = PLAYER_DYNAMIC_DATA_HEADER; //! placeholder
+            int ret = send(client_sockets[i], players, sizeof(players), 0);
+            if (ret < 0) {
+                perror("Send failed, removing client");
+                close(client_sockets[i]);
+                client_sockets[i] = 0;
+            }*/
+            for(int j = 0; j < connected_clients_count; j++) {
+                players[j].header = PLAYER_DYNAMIC_DATA_HEADER; //! placeholder
+                int ret = send(client_sockets[i], &players[j], sizeof(Player), 0);
+                if (ret < 0) {
+                    perror("Send failed, removing client");
+                    close(client_sockets[i]);
+                    client_sockets[i] = 0;
+                }
+            }
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+//TODO: doesnt make sense to make new copies like this i think
+void broadcast_new_player(int new_player_index) {
+    ReceivedDataFrame new_player_data;
+    new_player_data.header = PLAYER_STATIC_DATA_HEADER;
+    new_player_data.el1 = player_data[new_player_index].id;
+    new_player_data.el2 = player_data[new_player_index].sprite_id;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] != 0 && i != new_player_index) {
+            send(client_sockets[i], &new_player_data, sizeof(ReceivedDataFrame), 0);
+        }
+    }
+}
+
+void send_existing_players(int client_socket) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (player_data[i].id != INVALID_PLAYER_ID) {
+            ReceivedDataFrame new_player_data;
+            new_player_data.header = PLAYER_STATIC_DATA_HEADER;
+            new_player_data.el1 = player_data[i].id;
+            new_player_data.el2 = player_data[i].sprite_id;
+            send(client_socket, &player_data[i], sizeof(ReceivedDataFrame), 0);
+        }
+    }
+}
+
+#else
+/*
 void broadcast_players() {
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -41,7 +98,57 @@ void broadcast_players() {
         }
     }
     pthread_mutex_unlock(&clients_mutex);
+}*/
+void broadcast_players() {
+    ReceivedDataFrame frame;
+    frame.header = PLAYER_DYNAMIC_DATA_HEADER;
+
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] != 0) {
+            int ret = send(client_sockets[i], &frame, sizeof(ReceivedDataFrame), 0); 
+            if (ret < 0) {
+                perror("Send failed, removing client");
+                close(client_sockets[i]);
+                client_sockets[i] = 0;
+            }
+            ret = send(client_sockets[i], players, sizeof(players), 0);
+            if (ret < 0) {
+                perror("Send failed, removing client");
+                close(client_sockets[i]);
+                client_sockets[i] = 0;
+            }
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
 }
+
+void broadcast_new_player(int new_player_index) {
+    ReceivedDataFrame frame;
+    frame.header = PLAYER_STATIC_DATA_HEADER;
+
+    PlayerStaticData new_player_data = player_data[new_player_index];
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] != 0 && i != new_player_index) {
+            send(client_sockets[i], &frame, sizeof(ReceivedDataFrame), 0); 
+            send(client_sockets[i], &new_player_data, sizeof(PlayerStaticData), 0);
+        }
+    }
+}
+
+void send_existing_players(int client_socket) {
+    ReceivedDataFrame frame;
+    frame.header = PLAYER_STATIC_DATA_HEADER;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (player_data[i].id != INVALID_PLAYER_ID) {
+            send(client_sockets[i], &frame, sizeof(ReceivedDataFrame), 0); 
+            send(client_socket, &player_data[i], sizeof(PlayerStaticData), 0);
+        }
+    }
+}
+#endif
 
 void *client_handler(void *arg) {
     int client_socket = *(int *)arg;
@@ -54,8 +161,8 @@ void *client_handler(void *arg) {
     int new_client_id = -1;
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (players[i].id == 0) {
-            players[i].id = i + 1;
+        if (players[i].id == INVALID_PLAYER_ID) {
+            players[i].id = i;
             new_client_id = i;
             client_sockets[i] = client_socket;
             break;
@@ -69,9 +176,15 @@ void *client_handler(void *arg) {
         return NULL;
     }
 
-    send(client_socket, &players[new_client_id].id, sizeof(int), 0);
-    printf("New client connected, assigned id: %d\n", players[new_client_id].id);
+    player_data[new_client_id].id = players[new_client_id].id;
+    player_data[new_client_id].sprite_id = new_client_id;
 
+    send(client_socket, &players[new_client_id].id, sizeof(int), 0);
+    send_existing_players(client_socket);
+    broadcast_new_player(new_client_id);
+    printf("New client connected, assigned id: %d\n", players[new_client_id].id);
+    ++connected_clients_count;
+    
     Player update;
     while (1) {
         int bytes_received = recv(client_socket, &update, sizeof(Player), 0);
@@ -81,7 +194,7 @@ void *client_handler(void *arg) {
         }
         pthread_mutex_lock(&players_mutex);
         players[new_client_id] = update;
-        players[new_client_id].id = new_client_id + 1;
+        //players[new_client_id].id = new_client_id + 1;
         pthread_mutex_unlock(&players_mutex);
     }
 
@@ -90,9 +203,10 @@ void *client_handler(void *arg) {
     client_sockets[new_client_id] = 0;
     pthread_mutex_unlock(&clients_mutex);
     pthread_mutex_lock(&players_mutex);
-    players[new_client_id].id = 0;
+    players[new_client_id].id = INVALID_PLAYER_ID;
     players[new_client_id].x = 0;
     players[new_client_id].y = 0;
+    --connected_clients_count;
     pthread_mutex_unlock(&players_mutex);
     close(client_socket);
     return NULL;
@@ -115,6 +229,11 @@ int main() {
 
     memset(client_sockets, 0, sizeof(client_sockets));
     memset(players, 0, sizeof(players));
+    memset(player_data, 0, sizeof(player_data));
+    for(int i = 0; i < MAX_CLIENTS; ++i) {
+        players[i].id = INVALID_PLAYER_ID;
+        player_data[i].id = INVALID_PLAYER_ID;
+    }
 
     server_socket = check(socket(AF_INET, SOCK_STREAM, 0), "Socket creation failed");
 
