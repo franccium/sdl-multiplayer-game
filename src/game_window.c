@@ -1,12 +1,11 @@
-/*
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "common/common.h"
-#include "common/client_common.h"
+#include "client/client.h"
+
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 #define PLAYER_SPRITE_COUNT 5
@@ -102,7 +101,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     if (state[SDL_SCANCODE_S]) local_player.y += 2;
     if (state[SDL_SCANCODE_A]) local_player.x -= 2;
     if (state[SDL_SCANCODE_D]) local_player.x += 2; 
-
+    //printf("processed %d, %d\n", local_player.x, local_player.y);
     render_players();
 
     return SDL_APP_CONTINUE;
@@ -110,4 +109,4 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     SDL_DestroyTexture(player_sprites_map[local_player_data.sprite_id]);
-}*/
+}

@@ -10,21 +10,20 @@ include_directories(src)
 
 set(COMMON_SOURCES
     src/common/common.h
+    src/common/client_common.h
 )
 
 add_executable(server
     ${COMMON_SOURCES}
-    src/server/server.c
     src/server/server.h
+    src/server/server.c
 )
 
 add_executable(client
     ${COMMON_SOURCES}
     src/client/client.c
-    src/client/client.h
-    src/common/client_common.h
-    src/game_window.c
     src/game_window.h
+    src/game_window.c
 )
 
 target_link_libraries(client PRIVATE SDL3::SDL3)
