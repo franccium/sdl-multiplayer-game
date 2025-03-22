@@ -13,3 +13,5 @@ CMakeUserPresets.json
 *:Zone.Identifier
 
 .vscode
+
+build/
