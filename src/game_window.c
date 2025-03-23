@@ -26,7 +26,7 @@ float rotation_speed = 0.005f;
 float max_speed = 50.0f;
 Uint32 previous_time;
 
-SDL_Texture* player_sprites_map[MAX_CLIENTS];
+//SDL_Texture* player_sprites_map[MAX_CLIENTS];
 const char* player_sprite_files[MAX_CLIENTS] = {
     "../resources/sprites/boat-01.bmp",
     "../resources/sprites/boat-02.bmp",
@@ -38,7 +38,8 @@ const char* water_file = "../resources/sprites/water_noise.bmp";
 const char* water_frag = "../resources/shaders/water_frag.glsl";
 const char* water_vert = "../resources/shaders/water_vert.glsl";
 GLuint player_texture_map[MAX_CLIENTS];
-GLfloat texcoords[4];
+#define INVALID_PLAYER_TEXTURE 4294967295 //? no idea if i can do that
+GLfloat texcoords[MAX_CLIENTS][4];
 GLuint water_texture;
 GLfloat texcoords_water[4];
 
@@ -125,7 +126,9 @@ bool CompileShaderFromFile(GLhandleARB shader, const char *filePath)
     if (!source) {
         return false;
     }
+#if PRINT_SHADER_COMPILATION_INFO
     printf("compiling: %s", source);
+#endif
     GLint status = 0;
     pglShaderSourceARB(shader, 1, (const GLcharARB **)&source, NULL);
     pglCompileShaderARB(shader);
@@ -385,8 +388,8 @@ void SetCamera(float camera_x, float camera_y) {
 }
 
 static void DrawSprite(GLuint texture, float x, float y, float width, float height, float angle, float z) {
-    glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, texture);
+    glEnable(GL_TEXTURE_2D);
     
     pglUseProgramObjectARB(shaders[current_shader].program);
 
@@ -414,11 +417,15 @@ void draw_players() {
     glColor3f(1.0f, 1.0f, 1.0f);
 
     for(int i = 0; i < MAX_CLIENTS; ++i) {
-        float x = players_interpolated[0].x;
-        float y = players_interpolated[0].y;
-        float angle = players_interpolated[0].rotation;
+        if(players[i].id == INVALID_PLAYER_ID) continue;
+
+        float x = players_interpolated[i].x;
+        float y = players_interpolated[i].y;
+        float angle = players_interpolated[i].rotation;
         DrawSprite(player_texture_map[i], x, y, PLAYER_SPRITE_WIDTH, 
-            PLAYER_SPRITE_HEIGHT, angle, 0.2f);
+            PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN + PLAYER_Z_COORD_MULTIPLIER * players[i].id);
+        printf("drawing id%d tex%u\n", players[i].id, player_texture_map[i]);
+        //printf("drawn player ID: %d    ---  ", players[i].id);
     }
 }
 
@@ -429,6 +436,7 @@ void draw_water() {
 
     DrawSprite(water_texture, 0.0f, 0.0f, sprite_width, 
             sprite_height, 0.0f, 0.0f);
+    printf("water tex%u\n",  water_texture);
 }
 
 void draw_scene() {
@@ -443,6 +451,9 @@ void draw_scene() {
     draw_players();
 
     SDL_GL_SwapWindow(window);
+
+    printf("r");
+    fflush(stdout);
 }
 
 /* The main drawing function. */
@@ -513,23 +524,22 @@ void load_player_sprite(int sprite_id) {
         printf("Tried to load a player sprite for an invalid sprite ID.");
         return;
     };
-    printf("LOADING BMP %s", player_sprite_files[sprite_id]);
-    SDL_Surface *surface = SDL_LoadBMP(player_sprite_files[sprite_id]);
+    printf("LOADING BMP %s\n", player_sprite_files[sprite_id]);
+    fflush(stdout);
+    SDL_Surface* surface = SDL_LoadBMP(player_sprite_files[sprite_id]);
     if (!surface) {
-        printf("Could not load BMP image: \n");
-        return;
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to load %s: %s", player_sprite_files[sprite_id], SDL_GetError());
+        SDL_Quit();
+        exit(3);
     }
-    player_sprites_map[sprite_id] = SDL_CreateTextureFromSurface(renderer, surface);
+    player_texture_map[sprite_id] = SDL_GL_LoadTexture(surface, texcoords[sprite_id]);
     SDL_DestroySurface(surface);
-    if (!player_sprites_map[sprite_id]) {
-        printf("Could not create texture from surface: \n");
-        return;
-    }
+    printf("Loaded map for id: %d --> %u\n", sprite_id, player_texture_map[sprite_id]);
     fflush(stdout);
     return;
 }
 
-
+/*
 void render_players() {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
@@ -543,8 +553,7 @@ void render_players() {
     }
 
     SDL_RenderPresent(renderer);
-}
-
+}*/
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     if (SDL_Init(SDL_INIT_VIDEO) == false) {
@@ -556,6 +565,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Couldn't create window/renderer!", SDL_GetError(), NULL);
         return SDL_APP_FAILURE;
     }*/
+
+    for(int i = 0; i <MAX_CLIENTS; ++i) {
+        player_texture_map[i] = INVALID_PLAYER_TEXTURE;
+    }
 
     window = SDL_CreateWindow(GAME_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
     if (!window) {
@@ -571,30 +584,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
     InitShaders();
 
-    SDL_Surface* surface = SDL_LoadBMP(player_sprite_files[0]);
-    if (!surface) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to load boat-01.bmp: %s", SDL_GetError());
-        SDL_Quit();
-        exit(3);
-    }
-    player_texture_map[0] = SDL_GL_LoadTexture(surface, texcoords);
-    SDL_DestroySurface(surface);
-
     SDL_Surface* water_surface = SDL_LoadBMP(water_file);
     water_texture = SDL_GL_LoadTexture(water_surface, texcoords_water);
+    printf("LOADED BMP : %s\n", water_file);
     SDL_DestroySurface(water_surface);
 
     InitGL(WINDOW_WIDTH, WINDOW_HEIGHT);
     connect_to_server();
 
-    
-    while(is_player_initialized == false);
-    /*
-    for(int i = 0; i < MAX_CLIENTS; i++) {
-        if(player_data[i].id == INVALID_PLAYER_ID) continue;
-        load_player_sprite(player_data[i].sprite_id);
-    }*/
-    
+    while(is_player_initialized == false) {};
+
+    //load_player_sprite(local_player_data.sprite_id);
 
     previous_time = SDL_GetTicks();
 
@@ -682,6 +682,13 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     float delta_time = (current_time - previous_time) / 1000.0f;
     previous_time = current_time;
 
+    for(int i = 0; i < MAX_CLIENTS; ++i) {
+        if(players[i].id == INVALID_PLAYER_ID) continue;
+        if(player_texture_map[i] != INVALID_PLAYER_TEXTURE) continue;
+
+        load_player_sprite(player_data[i].sprite_id);
+    }
+
     if(is_update_locked) return SDL_APP_CONTINUE;
     update_game(delta_time);
     render_game();
@@ -692,6 +699,5 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 }
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
-    SDL_DestroyTexture(player_sprites_map[local_player_data.sprite_id]);
     QuitShaders();
 }

@@ -35,11 +35,6 @@ void broadcast_players() {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (client_sockets[i] != UNUSED_SOCKET_ID) {
             int ret = send(client_sockets[i], players, sizeof(players), 0);
-#if PRINT_SENT_DYNAMIC_DATA
-            for(int j = 0; j < connected_clients_count; j++) {
-                printf("sent H:%d id:%d, {%f, %f, %f}\n", players[j].header, players[j].id, players[j].x, players[j].y, players[j].rotation);
-            }
-#endif
             if (ret < 0) {
                 perror("Send failed, removing client");
                 close(client_sockets[i]);
@@ -47,29 +42,38 @@ void broadcast_players() {
             }
         }
     }
+#if PRINT_SENT_DYNAMIC_DATA
+    for(int j = 0; j < connected_clients_count; j++) {
+        printf("sent H:%d id:%d, {%f, %f, %f}\n", players[j].header, players[j].id, players[j].x, players[j].y, players[j].rotation);
+    }
+#endif
     pthread_mutex_unlock(&clients_mutex);
 }
 
 void broadcast_new_player(int new_player_index) {
-    pthread_mutex_lock(&clients_mutex);
-    
     PlayerStaticData new_player_data = player_data[new_player_index];
+    new_player_data.header = PLAYER_STATIC_DATA_HEADER;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (client_sockets[i] != UNUSED_SOCKET_ID && i != new_player_index) {
-            int ret = send(client_sockets[i], &new_player_data, sizeof(new_player_data), 0);
+            send(client_sockets[i], &new_player_data, sizeof(PlayerStaticData), 0);
 #if PRINT_SENT_STATIC_DATA
             for(int j = 0; j < connected_clients_count; j++) {
-                 printf("sent H:%d id:%d\n", new_player_data.header, new_player_data.id);
+                 printf("sent new player static H:%d id:%d\n", new_player_data.header, new_player_data.id);
             }
 #endif
-            if (ret < 0) {
-                perror("Send failed, removing client");
-                close(client_sockets[i]);
-                client_sockets[i] = UNUSED_SOCKET_ID;
-            }
         }
     }
-    pthread_mutex_unlock(&clients_mutex);
+}
+
+void send_existing_players_static(int client_socket) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] != UNUSED_SOCKET_ID && player_data[i].id != INVALID_PLAYER_ID) {
+            send(client_socket, &player_data[i], sizeof(PlayerStaticData), 0);
+#if PRINT_SENT_STATIC_DATA
+            printf("sent TO THE new player static H:%d id:%d\n", player_data[i].header, player_data[i].id);
+#endif
+        }
+    }
 }
 
 void *client_handler(void *arg) {
@@ -77,8 +81,6 @@ void *client_handler(void *arg) {
     free(arg);
 
     // disable Nagle's algorithm for low-latency sends
-    int flag = 1;
-    setsockopt(client_socket, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(flag));
 
     int client_id = INVALID_PLAYER_ID;
     pthread_mutex_lock(&clients_mutex);
@@ -104,15 +106,16 @@ void *client_handler(void *arg) {
     pthread_mutex_lock(&players_mutex);
     player_data[client_id].id = players[client_id].id;
     player_data[client_id].sprite_id = client_id;
-    players[client_id].x = 100.0f;
-    players[client_id].y = 100.0f;
-    pthread_mutex_unlock(&players_mutex);
-    
-    // send all existing players data
-    send(client_socket, player_data, sizeof(player_data), 0);
-    send(client_socket, players, sizeof(players), 0);
+
+    send_existing_players_static(client_socket);
     broadcast_new_player(client_id);
+    pthread_mutex_unlock(&players_mutex);
     printf("New client connected, assigned id: %d, static id: %d, sprite: %d\n", players[client_id].id, player_data[client_id].id, player_data[client_id].sprite_id);
+    for(int i = 0; i < MAX_CLIENTS; ++i) {
+        printf("----- KNOWN PLAYER: %d %d %d %d %f %f %f\n", players[i].header, players[i].id, players[i].action
+                , players[i].collision_byte, players[i].x, players[i].y, players[i].rotation);
+    }
+    
     ++connected_clients_count;
     server_busy = 0;
     Player update;
