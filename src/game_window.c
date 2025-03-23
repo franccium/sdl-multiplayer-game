@@ -15,7 +15,7 @@ Player players_interpolated[MAX_CLIENTS];
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 
-#define PLAYER_SPRITE_WIDTH 128.0f
+#define PLAYER_SPRITE_WIDTH 80.0f
 #define PLAYER_SPRITE_HEIGHT 64.0f
 
 
