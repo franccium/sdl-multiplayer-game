@@ -52,6 +52,27 @@ SDL_Texture* load_texture(SDL_Renderer* renderer, const char* file_path) {
     return texture;
 }
 
+void load_player_sprite(int sprite_id) {
+    if(sprite_id == INVALID_PLAYER_ID) {
+        printf("Tried to load a player sprite for an invalid sprite ID.");
+        return;
+    };
+    printf("LOADING BMP %s", player_sprite_files[sprite_id]);
+    SDL_Surface *surface = SDL_LoadBMP(player_sprite_files[sprite_id]);
+    if (!surface) {
+        printf("Could not load BMP image: \n");
+        return;
+    }
+    player_sprites_map[sprite_id] = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_DestroySurface(surface);
+    if (!player_sprites_map[sprite_id]) {
+        printf("Could not create texture from surface: \n");
+        return;
+    }
+    fflush(stdout);
+    return;
+}
+
 float to_degrees(float radians) {
     return radians * (180.f / PI);
 }
@@ -63,7 +84,7 @@ void render_players() {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (players[i].id != INVALID_PLAYER_ID) {
             SDL_FRect dstRect = { players_interpolated[i].x, players_interpolated[i].y, PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT };
-            SDL_RenderTextureRotated(renderer, player_sprites_map[0], NULL, 
+            SDL_RenderTextureRotated(renderer, player_sprites_map[player_data[i].sprite_id], NULL, 
                 &dstRect, to_degrees(players_interpolated[i].rotation), NULL, SDL_FLIP_NONE);
         }
     }
@@ -83,18 +104,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         return SDL_APP_FAILURE;
     }
 
-    SDL_Surface *surface = SDL_LoadBMP(player_sprite_files[0]);
-    if (!surface) {
-        fprintf(stderr, "Could not load BMP image: %s\n", SDL_GetError());
-    }
-
-    player_sprites_map[player_data->sprite_id] = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_DestroySurface(surface);
-    if (!player_sprites_map[player_data->sprite_id]) {
-        fprintf(stderr, "Could not create texture from surface: %s\n", SDL_GetError());
-    }
-
     connect_to_server();
+    while(is_player_initialized == false);
+
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+        if(player_data[i].id == INVALID_PLAYER_ID) continue;
+        load_player_sprite(player_data[i].sprite_id);
+    }
 
     previous_time = SDL_GetTicks();
 
@@ -119,16 +135,11 @@ float lerp_halflife(float a, float b, float t, float p, float dt) {
 }
 
 void update_players(float dt) {
-    float precision = 1/100;
+    float precision = 1.0f/100.0f;
 
     for(int i = 0; i < MAX_CLIENTS; ++i) {
         if(players[i].id == INVALID_PLAYER_ID) continue;
         float t = dt / GAME_STATE_UPDATE_FRAME_DELAY;
-        players_interpolated[i].id = players[i].id; //todo em
-        /*
-        players_interpolated[i].x = players_last[i].x + (players[i].x - players_last[i].x) * t;
-        players_interpolated[i].y = players_last[i].y + (players[i].y - players_last[i].y) * t;
-        players_interpolated[i].rotation = players_last[i].rotation + (players[i].rotation - players_last[i].rotation) * t;*/
 #if USE_HL_LERP
         players_interpolated[i].x = lerp_halflife(players_last[i].x, players[i].x, t, precision, dt);
         players_interpolated[i].y = lerp_halflife(players_last[i].y, players[i].y, t, precision, dt);
@@ -179,8 +190,6 @@ void update_game(float dt) {
 
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
-    int game_running = 1;
-
     Uint32 current_time = SDL_GetTicks();
     float delta_time = (current_time - previous_time) / 1000.0f;
     previous_time = current_time;

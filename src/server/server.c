@@ -20,6 +20,7 @@ int client_sockets[MAX_CLIENTS];
 pthread_mutex_t players_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 int connected_clients_count = 0;
+int server_busy = 0;
 
 int health_check(int exp, const char *msg) {
     if (exp == -1) {
@@ -34,6 +35,11 @@ void broadcast_players() {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (client_sockets[i] != UNUSED_SOCKET_ID) {
             int ret = send(client_sockets[i], players, sizeof(players), 0);
+#if PRINT_SENT_DYNAMIC_DATA
+            for(int j = 0; j < connected_clients_count; j++) {
+                printf("sent H:%d id:%d, {%f, %f, %f}\n", players[j].header, players[j].id, players[j].x, players[j].y, players[j].rotation);
+            }
+#endif
             if (ret < 0) {
                 perror("Send failed, removing client");
                 close(client_sockets[i]);
@@ -45,24 +51,26 @@ void broadcast_players() {
 }
 
 void broadcast_new_player(int new_player_index) {
+    pthread_mutex_lock(&clients_mutex);
+    
     PlayerStaticData new_player_data = player_data[new_player_index];
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (client_sockets[i] != UNUSED_SOCKET_ID && i != new_player_index) {
-            send(client_sockets[i], &new_player_data, sizeof(PlayerStaticData), 0);
-            printf("for others sent static: %d, %d  \n", new_player_data.id, new_player_data.sprite_id);
+            int ret = send(client_sockets[i], &new_player_data, sizeof(new_player_data), 0);
+#if PRINT_SENT_STATIC_DATA
+            for(int j = 0; j < connected_clients_count; j++) {
+                 printf("sent H:%d id:%d\n", new_player_data.header, new_player_data.id);
+            }
+#endif
+            if (ret < 0) {
+                perror("Send failed, removing client");
+                close(client_sockets[i]);
+                client_sockets[i] = UNUSED_SOCKET_ID;
+            }
         }
     }
+    pthread_mutex_unlock(&clients_mutex);
 }
-
-void send_existing_players_static(int client_socket) {
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (client_sockets[i] != UNUSED_SOCKET_ID && player_data[i].id != INVALID_PLAYER_ID) {
-            send(client_socket, &player_data[i], sizeof(PlayerStaticData), 0);
-            printf("for new sent static: %d, %d\n", player_data[i].id, player_data[i].sprite_id);
-        }
-    }
-}
-
 
 void *client_handler(void *arg) {
     int client_socket = *(int *)arg;
@@ -72,7 +80,7 @@ void *client_handler(void *arg) {
     int flag = 1;
     setsockopt(client_socket, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(flag));
 
-    int client_id = -1;
+    int client_id = INVALID_PLAYER_ID;
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {        
         if (players[i].id == INVALID_PLAYER_ID) {
@@ -84,23 +92,27 @@ void *client_handler(void *arg) {
     }
     pthread_mutex_unlock(&clients_mutex);
 
-    if(client_id == -1) {
+    if(client_id == INVALID_PLAYER_ID) {
         printf("No available slot for new client\n");
         close(client_socket);
         return NULL;
     }
     send(client_socket, &players[client_id].id, sizeof(char), 0);
+
+    server_busy = 1;
     
     pthread_mutex_lock(&players_mutex);
     player_data[client_id].id = players[client_id].id;
     player_data[client_id].sprite_id = client_id;
-
-    send_existing_players_static(client_socket);
-    broadcast_new_player(client_id);
     pthread_mutex_unlock(&players_mutex);
+    
+    // send all existing players data
+    send(client_socket, player_data, sizeof(player_data), 0);
+    send(client_socket, players, sizeof(players), 0);
+    broadcast_new_player(client_id);
     printf("New client connected, assigned id: %d, static id: %d, sprite: %d\n", players[client_id].id, player_data[client_id].id, player_data[client_id].sprite_id);
     ++connected_clients_count;
-    
+    server_busy = 0;
     Player update;
     while (1) {
         int bytes_received = recv(client_socket, &update, sizeof(Player), 0);
@@ -134,6 +146,7 @@ void *client_handler(void *arg) {
 void *broadcast_loop(void *arg) {
     const int frame_delay_ms = GAME_STATE_UPDATE_FRAME_DELAY;
     while (1) {
+        if(server_busy) usleep(frame_delay_ms * 1000);
         broadcast_players();
         usleep(frame_delay_ms * 1000);
     }
