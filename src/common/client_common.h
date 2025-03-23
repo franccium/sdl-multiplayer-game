@@ -9,4 +9,5 @@ extern char is_player_initialized;
 extern Player local_player;
 extern PlayerStaticData local_player_data;
 
-void load_player_sprite(int sprite_index);
+extern void load_player_sprite(int sprite_index);
+extern char should_update_sprites;

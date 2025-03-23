@@ -17,7 +17,7 @@ Player players_interpolated[MAX_CLIENTS];
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 
-#define PLAYER_SPRITE_WIDTH 80.0f
+#define PLAYER_SPRITE_WIDTH 128.0f
 #define PLAYER_SPRITE_HEIGHT 64.0f
 
 
@@ -450,6 +450,7 @@ void load_player_sprite(int sprite_id) {
     fflush(stdout);
     SDL_Surface* surface = SDL_LoadBMP(player_sprite_files[sprite_id]);
     if (!surface) {
+        printf("CANT LOAD\n");
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to load %s: %s", player_sprite_files[sprite_id], SDL_GetError());
         SDL_Quit();
         exit(3);
@@ -607,14 +608,17 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     total_time = fmodf(total_time, 3600.0f);
 
     update_shader_data();
-
-
-    for(int i = 0; i < MAX_CLIENTS; ++i) {
-        if(players[i].id == INVALID_PLAYER_ID) continue;
-        if(player_texture_map[i] != INVALID_PLAYER_TEXTURE) continue;
-
-        load_player_sprite(player_data[i].sprite_id);
-    }
+    
+    //if(should_update_sprites) {
+        for(int i = 0; i < MAX_CLIENTS; ++i) {
+            if(players[i].id == INVALID_PLAYER_ID) continue;
+            if(player_texture_map[i] != INVALID_PLAYER_TEXTURE) continue;
+            //TODO: breaks after 2 players
+            if(player_data[i].sprite_id != players[i].id) player_data[i].sprite_id = players[i].id;
+            load_player_sprite(player_data[i].sprite_id);
+        }
+        should_update_sprites = 0;
+   // }
 
     if(is_update_locked) return SDL_APP_CONTINUE;
     update_game(delta_time);

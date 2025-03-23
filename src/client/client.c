@@ -15,6 +15,7 @@ Player local_player = {INVALID_PLAYER_ID, 100, 100};
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
 char is_player_initialized = 1;
 char is_update_locked = 0;
+char should_update_sprites = 0;
 /*
 TODO:
 make a single define file for stuff like PORT, SERVER_IP, MAX_PLAYERS, sent structs (Player), etc
@@ -54,6 +55,7 @@ void receive_server_data(int client_socket) {
             printf("Received static data for player ID: %d, Sprite ID: %d\n", data->id, data->sprite_id);
             //if(data->id == local_player.id) break;
             //load_player_sprite(data->id); //! cant load here
+            should_update_sprites = 1;
             break;
 
         case PLAYER_DYNAMIC_DATA_HEADER:
