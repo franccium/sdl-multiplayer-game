@@ -20,7 +20,7 @@ static SDL_Renderer *renderer = NULL;
 
 
 float speed = 0.0f;
-float rotation_speed = 0.005f;
+float rotation_speed = 0.00005f;
 float max_speed = 50.0f;
 Uint32 previous_time;
 
@@ -63,7 +63,7 @@ void render_players() {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (players[i].id != INVALID_PLAYER_ID) {
             SDL_FRect dstRect = { players_interpolated[i].x, players_interpolated[i].y, PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT };
-            SDL_RenderTextureRotated(renderer, player_sprites_map[0], NULL, 
+            SDL_RenderTextureRotated(renderer, player_sprites_map[i % PLAYER_SPRITE_COUNT], NULL, 
                 &dstRect, to_degrees(players_interpolated[i].rotation), NULL, SDL_FLIP_NONE);
         }
     }
@@ -83,15 +83,22 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         return SDL_APP_FAILURE;
     }
 
-    SDL_Surface *surface = SDL_LoadBMP(player_sprite_files[0]);
-    if (!surface) {
-        fprintf(stderr, "Could not load BMP image: %s\n", SDL_GetError());
-    }
 
-    player_sprites_map[player_data->sprite_id] = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_DestroySurface(surface);
-    if (!player_sprites_map[player_data->sprite_id]) {
-        fprintf(stderr, "Could not create texture from surface: %s\n", SDL_GetError());
+
+    // Initial player data setup
+    // Load all player sprites
+    for (int i = 0; i < PLAYER_SPRITE_COUNT; i++) {
+        SDL_Surface *surface = SDL_LoadBMP(player_sprite_files[i]);
+        if (!surface) {
+            fprintf(stderr, "Could not load BMP image %s: %s\n", player_sprite_files[i], SDL_GetError());
+            continue;
+        }
+
+        player_sprites_map[i] = SDL_CreateTextureFromSurface(renderer, surface);
+        SDL_DestroySurface(surface);
+        if (!player_sprites_map[i]) {
+            fprintf(stderr, "Could not create texture from surface %s: %s\n", player_sprite_files[i], SDL_GetError());
+        }
     }
 
     connect_to_server();
