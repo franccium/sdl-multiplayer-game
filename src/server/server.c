@@ -104,6 +104,8 @@ void *client_handler(void *arg) {
     pthread_mutex_lock(&players_mutex);
     player_data[client_id].id = players[client_id].id;
     player_data[client_id].sprite_id = client_id;
+    players[client_id].x = 100.0f;
+    players[client_id].y = 100.0f;
     pthread_mutex_unlock(&players_mutex);
     
     // send all existing players data

@@ -3,7 +3,7 @@
 #include "common/common.h"
 #include "common/client_common.h"
 
-#define PRINT_RECEIVED_INFO 1
+#define PRINT_RECEIVED_INFO 0
 #define PRINT_RECEIVED_HEADER_INFO 0
 #define PRINT_SENT_PLAYER_UPDATE 0
 

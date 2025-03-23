@@ -5,7 +5,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 add_subdirectory(SDL EXCLUDE_FROM_ALL)
-
+find_package(OpenGL REQUIRED)
+        
 include_directories(src)
 
 set(COMMON_SOURCES
@@ -26,4 +27,4 @@ add_executable(client
     src/game_window.c
 )
 
-target_link_libraries(client PRIVATE SDL3::SDL3 m)
+target_link_libraries(client PRIVATE SDL3::SDL3 m OpenGL::GL)

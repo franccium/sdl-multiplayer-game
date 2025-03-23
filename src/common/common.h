@@ -8,7 +8,8 @@
 
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
 
-#define BUFFER_SIZE 80 //SIZE_OF_PLAYER-> the biggest struct
+#define BUFFER_SIZE 640 //SIZE_OF_PLAYER-> the biggest struct
+#define PLAYER_DYNAMIC_SIZE 128
 
 #define PLAYER_DYNAMIC_DATA_HEADER 0
 #define PLAYER_STATIC_DATA_HEADER 1
