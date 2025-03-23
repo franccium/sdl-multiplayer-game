@@ -6,8 +6,10 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 add_subdirectory(SDL EXCLUDE_FROM_ALL)
 find_package(OpenGL REQUIRED)
-        
+add_subdirectory(cglm EXCLUDE_FROM_ALL)
+
 include_directories(src)
+include_directories(cglm/include)
 
 set(COMMON_SOURCES
     src/common/common.h
@@ -28,3 +30,4 @@ add_executable(client
 )
 
 target_link_libraries(client PRIVATE SDL3::SDL3 m OpenGL::GL)
+target_link_libraries(server PRIVATE cglm) 

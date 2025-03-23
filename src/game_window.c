@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_opengl.h>
+#include <cglm/aabb2d.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,7 +47,7 @@ GLuint water_texture;
 GLfloat texcoords_water[4];
 
 SDL_Texture *LoadTexture(SDL_Renderer *renderer, const char *file, bool transparent);
-
+static bool InitShaders(void);
 
 typedef struct
 {
@@ -64,6 +65,41 @@ enum
     NUM_SHADERS
 };
 ShaderData shaders[NUM_SHADERS];
+
+GLuint gProgramID = 0;
+GLint gVertexPos2DLocation = -1;
+GLuint gVBO = 0;
+GLuint gIBO = 0;
+
+void init_opengl() {
+    SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
+    SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 1 );
+    SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE );
+
+
+    window = SDL_CreateWindow(GAME_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
+    if (!window) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create OpenGL window: %s", SDL_GetError());
+        SDL_Quit();
+        exit(2);
+    }
+
+    if (!SDL_GL_CreateContext(window)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create OpenGL context: %s", SDL_GetError());
+        SDL_Quit();
+        exit(2);
+    }
+    
+    //Use Vsync
+    if(SDL_GL_SetSwapInterval(1) < 0)
+    {
+        printf( "Warning: Unable to set VSync! SDL Error: %s\n", SDL_GetError() );
+    }
+
+    
+
+    InitShaders();
+}
 
 
 float to_degrees(float radians) {
@@ -468,23 +504,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         return SDL_APP_FAILURE;
     }
 
+    init_opengl();
+
     for(int i = 0; i <MAX_CLIENTS; ++i) {
         player_texture_map[i] = INVALID_PLAYER_TEXTURE;
     }
-
-    window = SDL_CreateWindow(GAME_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
-    if (!window) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create OpenGL window: %s", SDL_GetError());
-        SDL_Quit();
-        exit(2);
-    }
-
-    if (!SDL_GL_CreateContext(window)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create OpenGL context: %s", SDL_GetError());
-        SDL_Quit();
-        exit(2);
-    }
-    InitShaders();
 
     SDL_Surface* water_surface = SDL_LoadBMP(water_file);
     water_texture = SDL_GL_LoadTexture(water_surface, texcoords_water);
