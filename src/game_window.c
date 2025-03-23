@@ -22,8 +22,10 @@ static SDL_Renderer *renderer = NULL;
 
 
 float speed = 0.0f;
-float rotation_speed = 0.005f;
-float max_speed = 50.0f;
+float rotation_speed = 0.007f;
+float max_speed = 90.0f;
+float delta_time;
+float total_time;
 Uint32 previous_time;
 
 //SDL_Texture* player_sprites_map[MAX_CLIENTS];
@@ -45,20 +47,6 @@ GLfloat texcoords_water[4];
 
 SDL_Texture *LoadTexture(SDL_Renderer *renderer, const char *file, bool transparent);
 
-static bool shaders_supported;
-int current_shader = 1;
-
-float to_degrees(float radians) {
-    return radians * (180.f / PI);
-}
-
-enum
-{
-    SHADER_COLOR,
-    SHADER_TEXTURE,
-    SHADER_TEXCOORDS,
-    NUM_SHADERS
-};
 
 typedef struct
 {
@@ -69,7 +57,18 @@ typedef struct
     const char *frag_source;
 } ShaderData;
 
+enum
+{
+    PLAYER_SHADER = 0,
+    WATER_SHADER,
+    NUM_SHADERS
+};
 ShaderData shaders[NUM_SHADERS];
+
+
+float to_degrees(float radians) {
+    return radians * (180.f / PI);
+}
 
 char* load_shader_file(const char* shader_file_path) {
     printf("LOADING SHADER: %s\n", shader_file_path);
@@ -114,10 +113,17 @@ static PFNGLCREATESHADEROBJECTARBPROC pglCreateShaderObjectARB;
 static PFNGLDELETEOBJECTARBPROC pglDeleteObjectARB;
 static PFNGLGETINFOLOGARBPROC pglGetInfoLogARB;
 static PFNGLGETOBJECTPARAMETERIVARBPROC pglGetObjectParameterivARB;
+
 static PFNGLGETUNIFORMLOCATIONARBPROC pglGetUniformLocationARB;
+static PFNGLUNIFORM1IARBPROC pglUniform1iARB;
+static PFNGLUNIFORM1FARBPROC pglUniform1fARB;
+
+static PFNGLUNIFORM2FARBPROC pglUniform2fARB;
+static PFNGLUNIFORM3FARBPROC pglUniform3fARB;
+static PFNGLUNIFORM4FARBPROC pglUniform4fARB;
+
 static PFNGLLINKPROGRAMARBPROC pglLinkProgramARB;
 static PFNGLSHADERSOURCEARBPROC pglShaderSourceARB;
-static PFNGLUNIFORM1IARBPROC pglUniform1iARB;
 static PFNGLUSEPROGRAMOBJECTARBPROC pglUseProgramObjectARB;
 
 bool CompileShaderFromFile(GLhandleARB shader, const char *filePath)
@@ -185,18 +191,17 @@ static bool LinkProgram(ShaderData *data)
 static bool CompileShaderProgram(ShaderData *data)
 {
     const int num_tmus_bound = 4;
-    int i;
     GLint location;
 
     glGetError();
 
     data->program = pglCreateProgramObjectARB();
     data->vert_shader = pglCreateShaderObjectARB(GL_VERTEX_SHADER_ARB);
-    if(!CompileShaderFromFile(data->vert_shader, water_vert)) {
+    if(!CompileShaderFromFile(data->vert_shader, data->vert_source)) {
         return false;
     }
     data->frag_shader = pglCreateShaderObjectARB(GL_FRAGMENT_SHADER_ARB);
-    if(!CompileShaderFromFile(data->frag_shader, water_frag)) {
+    if(!CompileShaderFromFile(data->frag_shader, data->frag_source)) {
         return false;
     }
     if (!LinkProgram(data)) {
@@ -205,34 +210,29 @@ static bool CompileShaderProgram(ShaderData *data)
    
     // set up uniforms
     pglUseProgramObjectARB(data->program);
-    for (i = 0; i < num_tmus_bound; ++i) {
+
+    // Bind texture samplers
+    for (int i = 0; i < num_tmus_bound; ++i) {
         char tex_name[5];
         (void)SDL_snprintf(tex_name, SDL_arraysize(tex_name), "tex%d", i);
         location = pglGetUniformLocationARB(data->program, tex_name);
         if (location >= 0) {
-            pglUniform1iARB(location, i);
+            pglUniform1iARB(location, i); // Bind texture unit i to the sampler
         }
     }
-    pglUseProgramObjectARB(0);
 
     return (glGetError() == GL_NO_ERROR);
 }
 
 static void DestroyShaderProgram(ShaderData *data)
 {
-    if (shaders_supported) {
-        pglDeleteObjectARB(data->vert_shader);
-        pglDeleteObjectARB(data->frag_shader);
-        pglDeleteObjectARB(data->program);
-    }
+    pglDeleteObjectARB(data->vert_shader);
+    pglDeleteObjectARB(data->frag_shader);
+    pglDeleteObjectARB(data->program);
 }
 
 static bool InitShaders(void)
 {
-    int i;
-
-    /* Check for shader support */
-    shaders_supported = false;
     if (SDL_GL_ExtensionSupported("GL_ARB_shader_objects") &&
         SDL_GL_ExtensionSupported("GL_ARB_shading_language_100") &&
         SDL_GL_ExtensionSupported("GL_ARB_vertex_shader") &&
@@ -248,44 +248,31 @@ static bool InitShaders(void)
         pglLinkProgramARB = (PFNGLLINKPROGRAMARBPROC)SDL_GL_GetProcAddress("glLinkProgramARB");
         pglShaderSourceARB = (PFNGLSHADERSOURCEARBPROC)SDL_GL_GetProcAddress("glShaderSourceARB");
         pglUniform1iARB = (PFNGLUNIFORM1IARBPROC)SDL_GL_GetProcAddress("glUniform1iARB");
+        pglUniform1fARB = (PFNGLUNIFORM1FARBPROC)SDL_GL_GetProcAddress("glUniform1fARB");
+        pglUniform2fARB = (PFNGLUNIFORM2FARBPROC)SDL_GL_GetProcAddress("glUniform2fARB");
+        pglUniform3fARB = (PFNGLUNIFORM3FARBPROC)SDL_GL_GetProcAddress("glUniform3fARB");
+        pglUniform4fARB = (PFNGLUNIFORM4FARBPROC)SDL_GL_GetProcAddress("glUniform4fARB");
         pglUseProgramObjectARB = (PFNGLUSEPROGRAMOBJECTARBPROC)SDL_GL_GetProcAddress("glUseProgramObjectARB");
-        if (pglAttachObjectARB &&
-            pglCompileShaderARB &&
-            pglCreateProgramObjectARB &&
-            pglCreateShaderObjectARB &&
-            pglDeleteObjectARB &&
-            pglGetInfoLogARB &&
-            pglGetObjectParameterivARB &&
-            pglGetUniformLocationARB &&
-            pglLinkProgramARB &&
-            pglShaderSourceARB &&
-            pglUniform1iARB &&
-            pglUseProgramObjectARB) {
-            shaders_supported = true;
-        }
     }
 
-    if (!shaders_supported) {
-        return false;
-    }
+    shaders[PLAYER_SHADER].vert_source = "../resources/shaders/boat_vert.glsl";
+    shaders[PLAYER_SHADER].frag_source = "../resources/shaders/boat_frag.glsl";
+    shaders[WATER_SHADER].vert_source = "../resources/shaders/water_vert.glsl";
+    shaders[WATER_SHADER].frag_source = "../resources/shaders/water_frag.glsl";
 
-    /* Compile all the shaders */
-    for (i = 0; i < NUM_SHADERS; ++i) {
+    for (int i = 0; i < NUM_SHADERS; ++i) {
         if (!CompileShaderProgram(&shaders[i])) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to compile shader!");
             return false;
         }
     }
 
-    /* We're done! */
     return true;
 }
 
 static void QuitShaders(void)
 {
-    int i;
-
-    for (i = 0; i < NUM_SHADERS; ++i) {
+    for (int i = 0; i < NUM_SHADERS; ++i) {
         DestroyShaderProgram(&shaders[i]);
     }
 }
@@ -391,7 +378,6 @@ static void DrawSprite(GLuint texture, float x, float y, float width, float heig
     glBindTexture(GL_TEXTURE_2D, texture);
     glEnable(GL_TEXTURE_2D);
     
-    pglUseProgramObjectARB(shaders[current_shader].program);
 
     glPushMatrix();
     
@@ -409,12 +395,12 @@ static void DrawSprite(GLuint texture, float x, float y, float width, float heig
     
     glPopMatrix();
 
-    pglUseProgramObjectARB(0);
     glDisable(GL_TEXTURE_2D);
 }
 
 void draw_players() {
     glColor3f(1.0f, 1.0f, 1.0f);
+    pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
 
     for(int i = 0; i < MAX_CLIENTS; ++i) {
         if(players[i].id == INVALID_PLAYER_ID) continue;
@@ -424,19 +410,21 @@ void draw_players() {
         float angle = players_interpolated[i].rotation;
         DrawSprite(player_texture_map[i], x, y, PLAYER_SPRITE_WIDTH, 
             PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN + PLAYER_Z_COORD_MULTIPLIER * players[i].id);
-        printf("drawing id%d tex%u\n", players[i].id, player_texture_map[i]);
-        //printf("drawn player ID: %d    ---  ", players[i].id);
+        //printf("drawing id%d tex%u\n", players[i].id, player_texture_map[i]);
     }
+    pglUseProgramObjectARB(0);
 }
 
 void draw_water() {
     float sprite_width = WINDOW_WIDTH;
     float sprite_height = WINDOW_HEIGHT;
+    pglUseProgramObjectARB(shaders[WATER_SHADER].program);
     glColor3f(0.1f, 0.5f, 0.8f);
 
     DrawSprite(water_texture, 0.0f, 0.0f, sprite_width, 
             sprite_height, 0.0f, 0.0f);
-    printf("water tex%u\n",  water_texture);
+    pglUseProgramObjectARB(0);
+    //printf("water tex%u\n",  water_texture);
 }
 
 void draw_scene() {
@@ -451,72 +439,6 @@ void draw_scene() {
     draw_players();
 
     SDL_GL_SwapWindow(window);
-
-    printf("r");
-    fflush(stdout);
-}
-
-/* The main drawing function. */
-static void DrawGLScene(SDL_Window *window, GLuint texture, GLfloat *texcoord)
-{
-    /* Texture coordinate lookup, to make it simple */
-    enum
-    {
-        MINX,
-        MINY,
-        MAXX,
-        MAXY
-    };
-    
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); /* Clear The Screen And The Depth Buffer */
-    glLoadIdentity();                                   /* Reset The View */
-    printf("rendering at X: Y: %f %f ", players_interpolated[0].x, players_interpolated[0].y);
-    glTranslatef(players_interpolated[0].x, players_interpolated[0].y, 0.0f);
-
-    /* Enable blending */
-    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    /* draw a textured square (quadrilateral) */
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glColor3f(1.0f, 1.0f, 1.0f);
-    pglUseProgramObjectARB(shaders[current_shader].program);
-    glBegin(GL_QUADS); /* start drawing a polygon (4 sided) */
-    glTexCoord2f(texcoord[MINX], texcoord[MINY]);
-    glVertex3f(-1.0f, 1.0f, 0.0f); /* Top Left */
-    glTexCoord2f(texcoord[MAXX], texcoord[MINY]);
-    glVertex3f(1.0f, 1.0f, 0.0f); /* Top Right */
-    glTexCoord2f(texcoord[MAXX], texcoord[MAXY]);
-    glVertex3f(1.0f, -1.0f, 0.0f); /* Bottom Right */
-    glTexCoord2f(texcoord[MINX], texcoord[MAXY]);
-    glVertex3f(-1.0f, -1.0f, 0.0f); /* Bottom Left */
-    glEnd();                        /* done with the polygon */
-    pglUseProgramObjectARB(0);
-    glDisable(GL_TEXTURE_2D);
-
-    /* swap buffers to display, since we're double buffered. */
-    SDL_GL_SwapWindow(window);
-}
-
-
-SDL_Texture* load_texture(SDL_Renderer* renderer, const char* file_path) {
-    SDL_Texture* texture = NULL;
-    SDL_Surface* surface = SDL_LoadBMP(file_path);
-    if (!surface) {
-        printf("Failed to load image: %s\n", SDL_GetError());
-        return NULL;
-    }
-
-    texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_DestroySurface(surface);
-    if (!texture) {
-        printf("Failed to create texture: %s\n", SDL_GetError());
-        return NULL;
-    }
-
-    return texture;
 }
 
 void load_player_sprite(int sprite_id) {
@@ -539,32 +461,11 @@ void load_player_sprite(int sprite_id) {
     return;
 }
 
-/*
-void render_players() {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (players[i].id != INVALID_PLAYER_ID) {
-            SDL_FRect dstRect = { players_interpolated[i].x, players_interpolated[i].y, PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT };
-            SDL_RenderTextureRotated(renderer, player_sprites_map[player_data[i].sprite_id], NULL, 
-                &dstRect, to_degrees(players_interpolated[i].rotation), NULL, SDL_FLIP_NONE);
-        }
-    }
-
-    SDL_RenderPresent(renderer);
-}*/
-
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     if (SDL_Init(SDL_INIT_VIDEO) == false) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Couldn't initialize SDL!", SDL_GetError(), NULL);
         return SDL_APP_FAILURE;
     }
-    /*
-    if (SDL_CreateWindowAndRenderer("Multiplayer Game Client", WINDOW_WIDTH, WINDOW_HEIGHT, 0, &window, &renderer) == false) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Couldn't create window/renderer!", SDL_GetError(), NULL);
-        return SDL_APP_FAILURE;
-    }*/
 
     for(int i = 0; i <MAX_CLIENTS; ++i) {
         player_texture_map[i] = INVALID_PLAYER_TEXTURE;
@@ -659,9 +560,6 @@ void update_game(float dt) {
     if (state[SDL_SCANCODE_D]) {
         rot += rotation_speed;
     }
-    if (state[SDL_SCANCODE_E]) {
-        current_shader =( current_shader + 1 ) % 4;
-    }
 
     rot = fmodf(rot, 2.0f * PI);
     if (rot < 0.0f) {
@@ -676,11 +574,40 @@ void update_game(float dt) {
     update_players(dt);
 }
 
+void update_shader_data() {
+    pglUseProgramObjectARB(shaders[WATER_SHADER].program);
+    int location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_time");
+    if (location >= 0) {
+        pglUniform1fARB(location, total_time);
+    }
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_playerPos");
+    if (location >= 0) {
+        float x = local_player.x / 1280.0f;
+        float y = local_player.y / 720.0f;
+        pglUniform2fARB(location, x, y);
+    }
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_aspectRatio");
+    if (location >= 0) {
+        float aspectRatioX = 1280.0f / 720.0f;
+        float aspectRatioY = 720.0f / 1280.0f; 
+        pglUniform2fARB(location, aspectRatioX, aspectRatioY);
+    }
+        location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_foamRadiusWorld");
+    if (location >= 0) {
+        pglUniform1fARB(location, 128.0f / 1280.0f);
+    }
+    pglUseProgramObjectARB(0);
+}
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
     Uint32 current_time = SDL_GetTicks();
-    float delta_time = (current_time - previous_time) / 1000.0f;
+    delta_time = (current_time - previous_time) / 1000.0f;
     previous_time = current_time;
+    total_time += delta_time;
+    total_time = fmodf(total_time, 3600.0f);
+
+    update_shader_data();
+
 
     for(int i = 0; i < MAX_CLIENTS; ++i) {
         if(players[i].id == INVALID_PLAYER_ID) continue;
