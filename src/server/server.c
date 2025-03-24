@@ -72,7 +72,7 @@ void add_bullet(Bullet new_bullet, char dir){
 
 void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
     if (!bullet_node) return;
-    //bullet_node->bullet.x +=60;
+    bullet_node->bullet.x +=60;
     printf("%f\n", bullet_node->bullet.x);
     //todo
     switch (bullet_node->direction) {
@@ -96,6 +96,9 @@ void update_bullets(){
                 }
                 else{
                     head = current->next;
+                    BulletNode* temp = current;
+                    current = current->next;
+                    free(temp);
                 }
             }
             else{
