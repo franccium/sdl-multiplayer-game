@@ -49,10 +49,13 @@ bool is_bullet_dead(BulletNode* bullet_node){
     return false;
 }
 
-void add_bullet(Bullet new_bullet, char dir){
-    if(dir){
-        dir -= 1; //0 -> left, 1-> right
-    }
+void get_bullet_direction(vec2 direction, Player *player) {
+    float angle = player->rotation + PI / 4.0f;
+    direction[0] = cosf(angle);
+    direction[1] = sinf(angle);
+}
+
+void add_bullet(Bullet new_bullet, vec2 dir){
     BulletNode* new_node =(BulletNode*)malloc(sizeof(BulletNode)); 
     if (!new_node) {
         perror("Memory allocation failed");
@@ -60,7 +63,7 @@ void add_bullet(Bullet new_bullet, char dir){
     }
     new_node->next = NULL; 
     memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
-    new_node->direction = dir;
+    glm_vec2_copy(dir, new_node->direction);
     new_node->bullet.header = BULLET_HEADER;
     if (head){
         BulletNode* next = head->next;
@@ -77,11 +80,11 @@ void add_bullet(Bullet new_bullet, char dir){
 
 void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
     if (!bullet_node) return;
-    bullet_node->bullet.x +=60;
-    printf("%f\n", bullet_node->bullet.x);
-    //todo
-    switch (bullet_node->direction) {
-    }
+
+    bullet_node->bullet.x += bullet_node->direction[0] * BULLET_SPEED;
+    bullet_node->bullet.y += bullet_node->direction[1] * BULLET_SPEED;
+
+    printf("{%f, %f}\n", bullet_node->bullet.x, bullet_node->bullet.y);
 }
 
 
@@ -118,7 +121,6 @@ void update_bullets(){
         }
     }
     pthread_mutex_unlock(&bullets_mutex);
-
 }
 
 
@@ -278,7 +280,9 @@ void *client_handler(void *arg) {
             new_bullet.x = update.x;
             new_bullet.y = update.y;
             new_bullet.header = BULLET_HEADER;
-            add_bullet(new_bullet, update.action);
+            vec2 direction;
+            get_bullet_direction(direction, &update);
+            add_bullet(new_bullet, direction);
             printf("new bullet");
             pthread_mutex_unlock(&bullets_mutex);
         }

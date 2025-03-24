@@ -15,12 +15,15 @@
 #define WINDOW_HEIGHT 720
 #define PLAYER_SPRITE_COUNT 5
 Player players_interpolated[MAX_CLIENTS];
+Player bullets_interpolated[BULLETS_DEFAULT_CAPACITY];
 
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 
 #define PLAYER_SPRITE_WIDTH 128.0f
 #define PLAYER_SPRITE_HEIGHT 96.0f
+#define BULLET_SPRITE_WIDTH 32.0f
+#define BULLET_SPRITE_HEIGHT 32.0f
 //#define PLAYER_SPRITE_WIDTH 640.0f
 //#define PLAYER_SPRITE_HEIGHT 360.0f
 
@@ -41,13 +44,13 @@ const char* player_sprite_files[MAX_CLIENTS] = {
     "../resources/sprites/boat-05.bmp"
 };
 const char* water_file = "../resources/sprites/water_noise.bmp";
+const char* bullet_sprite_file = "../resources/sprites/bullet.bmp";
 const char* water_frag = "../resources/shaders/water_frag.glsl";
 const char* water_vert = "../resources/shaders/water_vert.glsl";
 GLuint player_texture_map[MAX_CLIENTS];
 #define INVALID_PLAYER_TEXTURE 4294967295 //? no idea if i can do that
-GLfloat texcoords[MAX_CLIENTS][4];
 GLuint water_texture;
-GLfloat texcoords_water[4];
+GLuint bullet_texture;
 
 SDL_Texture *LoadTexture(SDL_Renderer *renderer, const char *file, bool transparent);
 static bool InitShaders(void);
@@ -356,7 +359,7 @@ power_of_two(int input)
 }
 
 static GLuint
-SDL_GL_LoadTexture(SDL_Surface *surface, GLfloat *texcoord)
+SDL_GL_LoadTexture(SDL_Surface *surface)
 {
     GLuint texture;
     int w, h;
@@ -367,10 +370,6 @@ SDL_GL_LoadTexture(SDL_Surface *surface, GLfloat *texcoord)
     /* Use the surface width and height expanded to powers of 2 */
     w = power_of_two(surface->w);
     h = power_of_two(surface->h);
-    texcoord[0] = 0.0f;                    /* Min X */
-    texcoord[1] = 0.0f;                    /* Min Y */
-    texcoord[2] = (GLfloat)surface->w / w; /* Max X */
-    texcoord[3] = (GLfloat)surface->h / h; /* Max Y */
 
     image = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA32);
     if (!image) {
@@ -495,7 +494,7 @@ void draw_players() {
         float y = players_interpolated[i].y - PLAYER_SPRITE_HEIGHT / 2;
         float angle = players_interpolated[i].rotation;
         DrawSprite(player_texture_map[i], x, y, PLAYER_SPRITE_WIDTH, 
-           PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN + PLAYER_Z_COORD_MULTIPLIER * players[i].id);
+           PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN + PLAYER_Z_COORD_MULTIPLIER * i);
             
         pglUseProgramObjectARB(0);
 
@@ -508,6 +507,30 @@ void draw_players() {
     }
     //pglUseProgramObjectARB(0);
 }
+
+void draw_bullets() {
+    glColor3f(1.0f, 1.0f, 1.0f);
+    //pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
+    for(int i = 0; i < existing_bullets; ++i) {
+        pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
+
+        float x = bullets_interpolated[i].x - BULLET_SPRITE_WIDTH / 2;
+        float y = bullets_interpolated[i].y - BULLET_SPRITE_HEIGHT / 2;
+        DrawSprite(player_texture_map[i], x, y, BULLET_SPRITE_WIDTH, 
+           BULLET_SPRITE_HEIGHT, 0.0f, BULLET_Z_COORD_MIN + BULLET_Z_COORD_MULTIPLIER * i);
+            
+        pglUseProgramObjectARB(0);
+
+        RotatedRect bbox = {
+            { bullets[i].x, bullets[i].y },
+            { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+            0.0f
+        };
+        draw_rotated_bounding_box(&bbox, 0.4f + 0.05 * i);
+    }
+    //pglUseProgramObjectARB(0);
+}
+
 
 void draw_water() {
     float sprite_width = WINDOW_WIDTH;
@@ -532,6 +555,7 @@ void draw_scene() {
     //SetCamera(local_player.x, local_player.y);
 
     draw_water();
+    draw_bullets();
     draw_players();
 
     SDL_GL_SwapWindow(window);
@@ -553,7 +577,7 @@ void load_player_sprite(int sprite_id) {
         SDL_Quit();
         exit(3);
     }
-    player_texture_map[sprite_id] = SDL_GL_LoadTexture(surface, texcoords[sprite_id]);
+    player_texture_map[sprite_id] = SDL_GL_LoadTexture(surface);
     SDL_DestroySurface(surface);
     printf("Loaded map for id: %d --> %u\n", sprite_id, player_texture_map[sprite_id]);
     fflush(stdout);
@@ -573,9 +597,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
 
     SDL_Surface* water_surface = SDL_LoadBMP(water_file);
-    water_texture = SDL_GL_LoadTexture(water_surface, texcoords_water);
+    water_texture = SDL_GL_LoadTexture(water_surface);
     printf("LOADED BMP : %s\n", water_file);
     SDL_DestroySurface(water_surface);
+    
+    SDL_Surface* bullet_surface = SDL_LoadBMP(bullet_sprite_file);
+    bullet_texture = SDL_GL_LoadTexture(bullet_surface);
+    printf("LOADED BMP : %s\n", bullet_sprite_file);
+    SDL_DestroySurface(bullet_surface);
 
     InitGL(WINDOW_WIDTH, WINDOW_HEIGHT);
     connect_to_server();
@@ -608,10 +637,10 @@ float lerp_halflife(float a, float b, float t, float p, float dt) {
 
 void update_players(float dt) {
     float precision = 1.0f/100.0f;
+    float t = dt / GAME_STATE_UPDATE_FRAME_DELAY;
 
     for(int i = 0; i < MAX_CLIENTS; ++i) {
         if(players[i].id == INVALID_PLAYER_ID) continue;
-        float t = dt / GAME_STATE_UPDATE_FRAME_DELAY;
 #if USE_HL_LERP
         players_interpolated[i].x = lerp_halflife(players_last[i].x, players[i].x, t, precision, dt);
         players_interpolated[i].y = lerp_halflife(players_last[i].y, players[i].y, t, precision, dt);
@@ -621,6 +650,11 @@ void update_players(float dt) {
         players_interpolated[i].y = lerp(players_last[i].y, players[i].y, t);
         players_interpolated[i].rotation = lerp(players_last[i].rotation, players[i].rotation, t);
 #endif
+    }
+
+    for(int i = 0; i < existing_bullets; ++i) {
+        bullets_interpolated[i].x = lerp(bullets_last[i].x, bullets[i].x, t);
+        bullets_interpolated[i].y = lerp(bullets_last[i].y, bullets[i].y, t);
     }
 }
 

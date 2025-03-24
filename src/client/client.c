@@ -14,10 +14,14 @@ Player players_last[MAX_CLIENTS];
 PlayerStaticData player_data[MAX_CLIENTS];
 Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALID_PLAYER_ID,.x=100, .y=100, .collision_byte=0, .rotation=0};
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
+
+Bullet bullets[BULLETS_DEFAULT_CAPACITY];
+Bullet bullets_last[BULLETS_DEFAULT_CAPACITY];
+int existing_bullets = 0;
+
 char is_player_initialized = 1;
 char is_update_locked = 0;
 char should_update_sprites = 0;
-#define ACTION_COOLDOWN_TIME 1000000
 float shoot_timer = 0.0f;
 char can_shoot = 1;
 
@@ -92,8 +96,13 @@ void receive_server_data(int client_socket) {
 
         case BULLET_HEADER:
             printf("cool it's a bullet\n");
-            for(int i=0; i<MAX_CLIENTS; i++){
-                //printf("----- RECEIVED PLAYER: %d %d %d %d %f %f %f\n", players[i].header, players[i].id, players[i].action, players[i].collision_byte, players[i].x, players[i].y, players[i].rotation);
+            Bullet *bullet = (Bullet*)buffer;
+        
+            memcpy(&bullets_last[existing_bullets], &bullets[existing_bullets], sizeof(Bullet));
+            memcpy(&bullets[existing_bullets], bullet, sizeof(Bullet));
+            ++existing_bullets;
+            for(int i = 0; i < existing_bullets; i++) {
+                printf("known bullet: {%f, %f}\n", bullets[i].x, bullets[i].y);
             }
             break;
 

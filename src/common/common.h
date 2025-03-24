@@ -1,5 +1,10 @@
 #pragma once
 
+#include <math.h>
+#include <cglm/cglm.h>
+#define PI 3.1415927f
+#define EPSILON 1e-6f
+
 #define PORT 8080
 #define MAX_CLIENTS 5
 #define SERVER_IP "127.0.0.1"
@@ -16,11 +21,15 @@
 #define BULLET_HEADER 2
 #define NO_ACTION 0
 
-#define PLAYER_HITBOX_WIDTH 100.0f
-#define PLAYER_HITBOX_HEIGHT 80.0f
+#define PLAYER_HITBOX_WIDTH 128.0f
+#define PLAYER_HITBOX_HEIGHT 96.0f
+#define BULLET_HITBOX_WIDTH 32.0f
+#define BULLET_HITBOX_HEIGHT 32.0f
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
+
+#define BULLET_SPEED 1.0f
 
 typedef struct {
     unsigned char header; // 0 for player position
@@ -49,6 +58,6 @@ typedef struct BulletNode BulletNode;
 
 typedef struct BulletNode {
     Bullet bullet;
-    char direction; // 0 -> left, 1 -> right
+    vec2 direction;
     BulletNode* next; // Pointer to the next BulletNode
 } BulletNode;

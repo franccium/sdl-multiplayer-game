@@ -9,6 +9,11 @@ extern char is_player_initialized;
 extern Player local_player;
 extern PlayerStaticData local_player_data;
 
+#define BULLETS_DEFAULT_CAPACITY 20
+extern Bullet bullets[BULLETS_DEFAULT_CAPACITY];
+extern Bullet bullets_last[BULLETS_DEFAULT_CAPACITY];
+extern int existing_bullets;
+
 extern void load_player_sprite(int sprite_index);
 extern char should_update_sprites;
 
