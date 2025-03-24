@@ -2,10 +2,10 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_opengl.h>
-#include <cglm/aabb2d.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cglm/cglm.h>
 #include "client/client.h"
 #include "game_window.h"
 
@@ -153,6 +153,7 @@ static PFNGLGETOBJECTPARAMETERIVARBPROC pglGetObjectParameterivARB;
 static PFNGLGETUNIFORMLOCATIONARBPROC pglGetUniformLocationARB;
 static PFNGLUNIFORM1IARBPROC pglUniform1iARB;
 static PFNGLUNIFORM1FARBPROC pglUniform1fARB;
+static PFNGLUNIFORMMATRIX4FVARBPROC pglUniformMat4fvARB;
 
 static PFNGLUNIFORM2FARBPROC pglUniform2fARB;
 static PFNGLUNIFORM3FARBPROC pglUniform3fARB;
@@ -257,6 +258,8 @@ static bool CompileShaderProgram(ShaderData *data)
         }
     }
 
+    pglUseProgramObjectARB(0);
+
     return (glGetError() == GL_NO_ERROR);
 }
 
@@ -288,6 +291,7 @@ static bool InitShaders(void)
         pglUniform2fARB = (PFNGLUNIFORM2FARBPROC)SDL_GL_GetProcAddress("glUniform2fARB");
         pglUniform3fARB = (PFNGLUNIFORM3FARBPROC)SDL_GL_GetProcAddress("glUniform3fARB");
         pglUniform4fARB = (PFNGLUNIFORM4FARBPROC)SDL_GL_GetProcAddress("glUniform4fARB");
+        pglUniformMat4fvARB = (PFNGLUNIFORMMATRIX4FVARBPROC)SDL_GL_GetProcAddress("glUniform4fARB");
         pglUseProgramObjectARB = (PFNGLUSEPROGRAMOBJECTARBPROC)SDL_GL_GetProcAddress("glUseProgramObjectARB");
     }
 
@@ -302,6 +306,32 @@ static bool InitShaders(void)
             return false;
         }
     }
+
+    GLhandleARB program = shaders[WATER_SHADER].program;
+    pglUseProgramObjectARB(program);
+    GLint timeScaleLocation = pglGetUniformLocationARB(program, "u_timeScale");
+    printf("found:%d", timeScaleLocation);
+    GLint amplitudeLocation = pglGetUniformLocationARB(program, "u_initialAmplitude");
+    GLint amplitudeGainLocation = pglGetUniformLocationARB(program, "u_amplitudeGain");
+    GLint rotationAngleLocation = pglGetUniformLocationARB(program, "u_rotationAngle");
+    GLint colorMixFactorLocation = pglGetUniformLocationARB(program, "u_colorMixFactor");
+
+    if (timeScaleLocation >= 0) {
+        pglUniform1fARB(timeScaleLocation, 1.0f);
+    }
+    if (amplitudeLocation >= 0) {
+        pglUniform1fARB(amplitudeLocation, 0.3f);
+    }
+    if (amplitudeGainLocation >= 0) {
+        pglUniform1fARB(amplitudeGainLocation, 0.7f);
+    }
+    if (rotationAngleLocation >= 0) {
+        pglUniform1fARB(rotationAngleLocation, 0.5f);
+    }
+    if (colorMixFactorLocation >= 0) {
+        pglUniform1fARB(colorMixFactorLocation, 4.0f);
+    }
+    pglUseProgramObjectARB(0);
 
     return true;
 }
@@ -381,7 +411,7 @@ static void InitGL(int Width, int Height) /* We call this right after our OpenGL
     GLdouble aspect;
 
     glViewport(0, 0, Width, Height);
-    glClearColor(0.0f, 0.0f, 0.2f, 0.0f); /* This Will Clear The Background Color To Black */
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f); /* This Will Clear The Background Color To Black */
     glClearDepth(1.0);                    /* Enables Clearing Of The Depth Buffer */
     glDepthFunc(GL_LESS);                 /* The Type Of Depth Test To Do */
     glEnable(GL_DEPTH_TEST);              /* Enables Depth Testing */
@@ -410,18 +440,18 @@ void SetCamera(float camera_x, float camera_y) {
     glLoadIdentity();
 }
 
-static void DrawSprite(GLuint texture, float x, float y, float width, float height, float angle, float z) {
+static void DrawSprite(GLuint texture, float x, float y, 
+    float width, float height, float angle, float z) {
     glBindTexture(GL_TEXTURE_2D, texture);
     glEnable(GL_TEXTURE_2D);
     
-
     glPushMatrix();
-    
     // rotate around origin
-    glTranslatef(x + width / 2.0f, y + height / 2.0f, z);
+    glTranslatef(x, y, z);
+    glTranslatef(width / 2.0f, height / 2.0f, 0.0f);
     glRotatef((GLfloat)to_degrees(angle), 0.0f, 0.0f, 1.0f);
-    glTranslatef(-width / 2.0f, -height / 2.0f, z);
-    
+    glTranslatef(-width / 2.0f, -height / 2.0f, 0.0f);
+
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);            
     glTexCoord2f(1.0f, 0.0f); glVertex2f(width, 0.0f);            
@@ -470,6 +500,8 @@ void draw_scene() {
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    //SetCamera(local_player.x, local_player.y);
 
     draw_water();
     draw_players();
@@ -600,6 +632,7 @@ void update_game(float dt) {
 }
 
 void update_shader_data() {
+    //NOTE: the variables have to be used in a meaningful way for the compilator not to optimise them out
     pglUseProgramObjectARB(shaders[WATER_SHADER].program);
     int location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_time");
     if (location >= 0) {
@@ -607,20 +640,25 @@ void update_shader_data() {
     }
     location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_playerPos");
     if (location >= 0) {
-        float x = local_player.x / 1280.0f;
-        float y = local_player.y / 720.0f;
+        float cX = local_player.x + PLAYER_SPRITE_WIDTH / 2;
+        float cY = local_player.y + PLAYER_SPRITE_HEIGHT / 2;
+        float x = cX / 1280.0f;
+        float y = cY / 720.0f;
         pglUniform2fARB(location, x, y);
     }
+    //printf("found: %d", location);
     location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_aspectRatio");
     if (location >= 0) {
         float aspectRatioX = 1280.0f / 720.0f;
         float aspectRatioY = 720.0f / 1280.0f; 
         pglUniform2fARB(location, aspectRatioX, aspectRatioY);
     }
-        location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_foamRadiusWorld");
+    //printf("found: %d", location);
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_foamRadiusWorld");
     if (location >= 0) {
-        pglUniform1fARB(location, 128.0f / 1280.0f);
+        pglUniform1fARB(location, 500.0f / 1280.0f);
     }
+
     pglUseProgramObjectARB(0);
 }
 
