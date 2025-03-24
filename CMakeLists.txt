@@ -14,6 +14,8 @@ include_directories(cglm/include)
 set(COMMON_SOURCES
     src/common/common.h
     src/common/client_common.h
+    src/common/collisions.h
+    src/common/collisions.c
 )
 
 add_executable(server
@@ -30,4 +32,4 @@ add_executable(client
 )
 
 target_link_libraries(client PRIVATE SDL3::SDL3 m OpenGL::GL)
-target_link_libraries(server PRIVATE cglm) 
+target_link_libraries(server PRIVATE SDL3::SDL3 cglm m)

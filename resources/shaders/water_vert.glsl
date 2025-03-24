@@ -20,7 +20,7 @@ void main()
     float scrollSpeed = 0.02;
 
     //v_texCoord = vec2(gl_MultiTexCoord0);
-    v_texCoord = vec2(gl_MultiTexCoord0) + scrollDirection * u_time * scrollSpeed;
+    v_texCoord = vec2(gl_MultiTexCoord0);
 
     v_playerPos = u_playerPos;
 }

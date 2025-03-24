@@ -15,6 +15,9 @@
 #define PLAYER_STATIC_DATA_HEADER 1
 #define BULLET_HEADER 2
 
+#define PLAYER_HITBOX_WIDTH 100.0f
+#define PLAYER_HITBOX_HEIGHT 80.0f
+
 typedef struct {
     unsigned char header; // 0 for player position
     char id;

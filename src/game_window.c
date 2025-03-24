@@ -8,6 +8,7 @@
 #include <cglm/cglm.h>
 #include "client/client.h"
 #include "game_window.h"
+#include "common/collisions.h"
 
 #define GAME_TITLE "Bitwa Piracka"
 #define WINDOW_WIDTH 1280
@@ -19,11 +20,13 @@ static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 
 #define PLAYER_SPRITE_WIDTH 128.0f
-#define PLAYER_SPRITE_HEIGHT 64.0f
+#define PLAYER_SPRITE_HEIGHT 96.0f
+//#define PLAYER_SPRITE_WIDTH 640.0f
+//#define PLAYER_SPRITE_HEIGHT 360.0f
 
 
 float speed = 0.0f;
-float rotation_speed = 0.007f;
+float rotation_speed = 0.05f;
 float max_speed = 90.0f;
 float delta_time;
 float total_time;
@@ -76,7 +79,6 @@ void init_opengl() {
     SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 1 );
     SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE );
 
-
     window = SDL_CreateWindow(GAME_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
     if (!window) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create OpenGL window: %s", SDL_GetError());
@@ -95,8 +97,6 @@ void init_opengl() {
     {
         printf( "Warning: Unable to set VSync! SDL Error: %s\n", SDL_GetError() );
     }
-
-    
 
     InitShaders();
 }
@@ -405,23 +405,24 @@ SDL_GL_LoadTexture(SDL_Surface *surface, GLfloat *texcoord)
     return texture;
 }
 
-/* A general OpenGL initialization function.    Sets all of the initial parameters. */
-static void InitGL(int Width, int Height) /* We call this right after our OpenGL window is created. */
+static void InitGL(int Width, int Height)
 {
-    GLdouble aspect;
-
-    glViewport(0, 0, Width, Height);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f); /* This Will Clear The Background Color To Black */
-    glClearDepth(1.0);                    /* Enables Clearing Of The Depth Buffer */
-    glDepthFunc(GL_LESS);                 /* The Type Of Depth Test To Do */
-    glEnable(GL_DEPTH_TEST);              /* Enables Depth Testing */
-    glShadeModel(GL_SMOOTH);              /* Enables Smooth Color Shading */
+    int windowWidth, windowHeight;
+    SDL_GetWindowSizeInPixels(window, &windowWidth, &windowHeight);
+    glViewport(0, 0, windowWidth, windowHeight);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClearDepth(1.0);
+    glDepthFunc(GL_LESS); 
+    glEnable(GL_DEPTH_TEST);
+    glShadeModel(GL_SMOOTH);
 
     glMatrixMode(GL_PROJECTION);
-    glLoadIdentity(); /* Reset The Projection Matrix */
+    glLoadIdentity();
 
-    aspect = (GLdouble)Width / Height;
-    glOrtho(0.0, Width, Height, 0.0, -1.0, 1.0);
+    //glOrtho(0.0, WINDOW_WIDTH, WINDOW_HEIGHT, 0.0, -1.0, 1.0);
+    //glOrtho(0.0, Width, Height, 0.0, -1.0, 1.0);
+
+    glOrtho(0.0, windowWidth, windowHeight, 0.0, -1.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
 }
@@ -444,9 +445,9 @@ static void DrawSprite(GLuint texture, float x, float y,
     float width, float height, float angle, float z) {
     glBindTexture(GL_TEXTURE_2D, texture);
     glEnable(GL_TEXTURE_2D);
-    
     glPushMatrix();
     // rotate around origin
+    width *= 1.63f;
     glTranslatef(x, y, z);
     glTranslatef(width / 2.0f, height / 2.0f, 0.0f);
     glRotatef((GLfloat)to_degrees(angle), 0.0f, 0.0f, 1.0f);
@@ -464,21 +465,48 @@ static void DrawSprite(GLuint texture, float x, float y,
     glDisable(GL_TEXTURE_2D);
 }
 
+void draw_rotated_bounding_box(const RotatedRect* rect, float z) {
+    vec2 corners[4];
+    get_rotated_rect_corners(rect, corners);
+    
+    glDisable(GL_TEXTURE_2D);
+    glColor3f(1.0f, 0.0f, 0.0f);
+    glLineWidth(2.0f);
+    
+    glBegin(GL_LINE_LOOP);
+    for (int i = 0; i < 4; i++) {
+        glVertex3f(corners[i][0], corners[i][1], z);
+    }
+    glEnd();
+
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(1.0f);
+    glEnable(GL_TEXTURE_2D);
+}
+
 void draw_players() {
     glColor3f(1.0f, 1.0f, 1.0f);
-    pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
-
+    //pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
     for(int i = 0; i < MAX_CLIENTS; ++i) {
         if(players[i].id == INVALID_PLAYER_ID) continue;
+        pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
 
-        float x = players_interpolated[i].x;
-        float y = players_interpolated[i].y;
+        float x = players_interpolated[i].x - PLAYER_SPRITE_WIDTH / 2;
+        float y = players_interpolated[i].y - PLAYER_SPRITE_HEIGHT / 2;
         float angle = players_interpolated[i].rotation;
         DrawSprite(player_texture_map[i], x, y, PLAYER_SPRITE_WIDTH, 
-            PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN + PLAYER_Z_COORD_MULTIPLIER * players[i].id);
-        //printf("drawing id%d tex%u\n", players[i].id, player_texture_map[i]);
+           PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN + PLAYER_Z_COORD_MULTIPLIER * players[i].id);
+            
+        pglUseProgramObjectARB(0);
+
+        RotatedRect bbox = {
+            { players[i].x, players[i].y },
+            { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+            players[i].rotation
+        };
+        draw_rotated_bounding_box(&bbox, 0.4f + 0.05 * i);
     }
-    pglUseProgramObjectARB(0);
+    //pglUseProgramObjectARB(0);
 }
 
 void draw_water() {

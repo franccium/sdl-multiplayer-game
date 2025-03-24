@@ -8,10 +8,10 @@
 
 #include "server.h"
 #include "common/common.h"
+#include "common/collisions.h"
 
 //NOTE: may need to find an optimal delay, or interpolate or sth if needed for performance, above 20 is too much
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
-
 
 // global player state
 Player players[MAX_CLIENTS];
@@ -28,6 +28,39 @@ int health_check(int exp, const char *msg) {
         exit(1);
     }
     return exp;
+}
+
+void check_collisions() {
+    for (int i = 0; i < connected_clients_count; i++) {
+        bool collides;
+        char collisionMatrix = 0;
+        char collisionCount = 0;
+        RotatedRect bbox = {
+            { players[i].x, players[i].y },
+            { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+            players[i].rotation
+        };
+
+        for(int j = 0; j < connected_clients_count; ++j) {
+            if(i == j) continue;
+
+            RotatedRect otherBbox = {
+                { players[j].x, players[j].y },
+                { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+                players[j].rotation
+            };
+
+            collides = sat_obb_collision_check(&bbox, &otherBbox);
+            if(collides){
+                ++collisionCount;
+                printf("%d collides with %d\n", players[i].id, players[j].id);
+                printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
+            }
+            collides << j;
+            collisionMatrix |= collides;
+        }
+        printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
+    }
 }
 
 void broadcast_players() {
@@ -140,8 +173,9 @@ void *client_handler(void *arg) {
     pthread_mutex_unlock(&clients_mutex);
     pthread_mutex_lock(&players_mutex);
     players[client_id].id = INVALID_PLAYER_ID;
-    players[client_id].x = 0;
-    players[client_id].y = 0;
+    players[client_id].x = 0.0f;
+    players[client_id].y = 0.0f;
+    players[client_id].rotation = 0.0f;
     pthread_mutex_unlock(&players_mutex);
     close(client_socket);
     return NULL;
@@ -152,6 +186,7 @@ void *broadcast_loop(void *arg) {
     const int frame_delay_ms = GAME_STATE_UPDATE_FRAME_DELAY;
     while (1) {
         if(server_busy) usleep(frame_delay_ms * 1000);
+        check_collisions();
         broadcast_players();
         usleep(frame_delay_ms * 1000);
     }
