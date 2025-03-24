@@ -21,7 +21,9 @@ uniform float u_colorMixFactor;
 #define WATER_COLOR_DARK    vec3(0.101961, 0.619608, 0.266667)
 #define WATER_COLOR_MID     vec3(0.666667, 0.666667, 0.998039)
 #define WATER_COLOR_SHALLOW vec3(0.0, 0.4, 0.964706)
-#define WATER_COLOR_FOAM    vec3(0.666667, 1.0, 1.0)
+#define WATER_COLOR_FOAM    vec3(1.0, 1.0, 0.8)
+#define SUN_COLOR           vec3(1.0, 0.83, 0.18)
+#define SUN_STRENGTH        0.0 // 0.25 for on
 
 float hashS(in vec2 pos)
 {
@@ -41,7 +43,7 @@ float valueNoise(in vec2 pos)
     // factorized cubic hermite spline
     vec2 intp = gPos * gPos * (3.0 - 2.0 * gPos);
 
-    return mix(a, b, u.x) + (c - a) * intp.y * (1.0 - intp.x) + (d - b) * intp.x * intp.y;
+    return mix(a, b, intp.x) + (c - a) * intp.y * (1.0 - intp.x) + (d - b) * intp.x * intp.y;
 }
 
 float fbm(in vec2 pos)
@@ -51,7 +53,7 @@ float fbm(in vec2 pos)
     float amplitudeGain = u_amplitudeGain;
     vec2 octaveOffset = vec2(100.0);
 
-    mat2 rotation = mat2(cos(u_rotationAngle), sin(u_rotationAngle), - sin(u_rotationAngle), cos(u_rotationAngle));
+    mat2 rotation = mat2(cos(0.9), sin(0.8), - sin(0.9), cos(0.6));
 
     for (int i = 0; i < OCTAVES; ++i)
     {
@@ -68,36 +70,44 @@ vec4 domainWarpedFBM(vec2 screenPos)
 {
     screenPos *= NOISE_SCALE;
 
+    vec2 waveDirection1 = normalize(vec2(1.0, 0.5));
+    vec2 waveDirection2 = normalize(vec2(-0.7, 0.3));
+    vec2 waveDirection3 = normalize(vec2(0.3, -0.8));
+    vec2 waveDirection4 = normalize(vec2(-0.5, -0.5));
+
     vec2 layer1;
-    layer1.x = fbm(screenPos + X_MOVEMENT_SCALE1 * u_time * u_timeScale);
-    layer1.y = fbm(screenPos + vec2(2.0));
+    layer1.x = fbm(screenPos + X_MOVEMENT_SCALE1 * u_time * u_timeScale * waveDirection1);
+    layer1.y = fbm(screenPos + vec2(2.0) + 0.1 * u_time * u_timeScale * waveDirection1);
 
     vec2 layer2;
-    layer2.x = fbm(screenPos + 1.0 * layer1 + vec2(1.7, 9.2) + 0.15 * u_time * u_timeScale);
-    layer2.y = fbm(screenPos + 1.0 * layer1 + vec2(8.3, 2.8) + 0.126 * u_time * u_timeScale);
+    layer2.x = fbm(screenPos + 1.0 * layer1 + vec2(1.7, 9.2) + 0.15 * u_time * u_timeScale * waveDirection2);
+    layer2.y = fbm(screenPos + 1.0 * layer1 + vec2(8.3, 2.8) + 0.126 * u_time * u_timeScale * waveDirection2);
 
     float l1Height = fbm(screenPos + layer2);
 
     vec2 layer3;
-    layer3.x = fbm(screenPos * 2.0 - X_MOVEMENT_SCALE2 * u_time * u_timeScale + vec2(10.0, 20.0));
-    layer3.y = fbm(screenPos * 2.0 + vec2(3.0) + vec2(10.0, 20.0));
+    layer3.x = fbm(screenPos * 2.0 - X_MOVEMENT_SCALE2 * u_time * u_timeScale * waveDirection3 + vec2(10.0, 20.0));
+    layer3.y = fbm(screenPos * 2.0 + vec2(3.0) + 0.2 * u_time * u_timeScale * waveDirection3 + vec2(10.0, 20.0));
 
     vec2 layer4;
-    layer4.x = fbm(screenPos * 2.3 + 1.0 * layer3 + vec2(1.7, 4.2) + 0.3 * u_time * u_timeScale);
-    layer4.y = fbm(screenPos * 3.0 + 1.0 * layer3 + vec2(2.3, 2.8) + 0.1 * u_time * u_timeScale);
+    layer4.x = fbm(screenPos * 2.3 + 1.0 * layer3 + vec2(1.7, 4.2) + 0.3 * u_time * u_timeScale * waveDirection4);
+    layer4.y = fbm(screenPos * 3.0 + 1.0 * layer3 + vec2(2.3, 2.8) + 0.1 * u_time * u_timeScale * waveDirection4);
 
-    float l2Height = fbm(screenPos * 2.0 + layer4);
-    
+    float l2Height = fbm(screenPos * 8.0 + layer4);
+
     float f = mix(l1Height, l2Height, LAYER12_MIX);
 
-    vec3 fmbColor = mix(WATER_COLOR_DARK,
-        WATER_COLOR_MID, clamp((f * f) * u_colorMixFactor, 0.0, 1.0));
+    float l3 = fbm(screenPos * 4.0 + 0.5 * u_time * u_timeScale);
+    f += 0.1 * l3;
+    float foamIntensity = smoothstep(0.1, 0.3, abs(f - l2Height)) * 4.0;
 
-    fmbColor = mix(fmbColor,
-        WATER_COLOR_SHALLOW, clamp(length(layer1), 0.0, 1.0));
+    vec3 fmbColor = mix(WATER_COLOR_DARK, WATER_COLOR_MID, clamp((f * f) * u_colorMixFactor, 0.0, 1.0));
 
-    fmbColor = mix(fmbColor,
-        WATER_COLOR_FOAM, clamp(length(layer2.x), 0.0, 1.0));
+    fmbColor = mix(fmbColor, WATER_COLOR_SHALLOW, clamp(length(layer1), 0.0, 1.0));
+
+    fmbColor = mix(fmbColor, WATER_COLOR_FOAM, foamIntensity);
+
+    fmbColor = mix(fmbColor, SUN_COLOR, SUN_STRENGTH);
 
     return vec4((f * f * f + .6 * f * f + .5 * f) * fmbColor, 1.0);
 }
