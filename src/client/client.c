@@ -18,6 +18,8 @@ char is_player_initialized = 1;
 char is_update_locked = 0;
 char should_update_sprites = 0;
 #define ACTION_COOLDOWN_TIME 1000000
+float shoot_timer = 0.0f;
+char can_shoot = 1;
 
 pthread_mutex_t action_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -90,6 +92,9 @@ void receive_server_data(int client_socket) {
 
         case BULLET_HEADER:
             printf("cool it's a bullet\n");
+            for(int i=0; i<MAX_CLIENTS; i++){
+                //printf("----- RECEIVED PLAYER: %d %d %d %d %f %f %f\n", players[i].header, players[i].id, players[i].action, players[i].collision_byte, players[i].x, players[i].y, players[i].rotation);
+            }
             break;
 
         default:
@@ -121,33 +126,20 @@ void *client_communication(void *arg) {
         receive_server_data(client_socket);
     
         // Check if there's an action and apply cooldown if needed
-        if (local_player.action) {
-            struct timeval current_time;
-            gettimeofday(&current_time, NULL); // Get current time
-    
-            unsigned long current_time_ms = (current_time.tv_sec * 1000000) + current_time.tv_usec; // Time in microseconds
-    
-            // Check if enough time has passed since the last action
-            if (current_time_ms - last_action_time > ACTION_COOLDOWN_TIME) {
-                last_action_time = current_time_ms; // Update last action time
-                if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
-                    perror("Send failed");
-                    break;
-                } else {
-                    printf("sent action %d\n", local_player.action);
-                }
-            } else {
-                printf("Cooldown active. Skipping action send.\n");
-            }
-        } else {
-            // If there's no action, send immediately without cooldown
-            if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
-                perror("Send failed");
-                break;
-            } else {
-                // printf("sent (no action)\n");
-            }
+        if ((shoot_timer > 0.0f)) {
+            local_player.action = 0;
         }
+        // If there's no action, send immediately without cooldown
+        if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
+            perror("Send failed");
+            break;
+        } else {
+            // printf("sent (no action)\n");
+            if(local_player.action == 1) shoot_timer = SHOOT_COOLDOWN;
+        }
+
+        //printf("shoot cd: %f\n", shoot_timer);
+        //printf("shoot action: %d\n", local_player.action);
     
         // Reset the action after sending
         local_player.action = 0;

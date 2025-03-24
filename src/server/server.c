@@ -72,7 +72,7 @@ void add_bullet(Bullet new_bullet, char dir){
 
 void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
     if (!bullet_node) return;
-    bullet_node->bullet.x +=60;
+    //bullet_node->bullet.x +=60;
     printf("%f\n", bullet_node->bullet.x);
     //todo
     switch (bullet_node->direction) {
@@ -87,11 +87,12 @@ void update_bullets(){
         if(current){
             update_bullet_position(current);
             if (is_bullet_dead(current)){
+                bullets_count -= 1;
                 if(last){
                     last->next = current->next;
-                    bullets_count -= 1;
                     printf("that many bullets left %d", bullets_count);
                     free(current);
+                    current = NULL;
                 }
                 else{
                     head = current->next;

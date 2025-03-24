@@ -538,10 +538,12 @@ void draw_scene() {
 }
 
 void load_player_sprite(int sprite_id) {
+    printf("GOT %d\n", sprite_id);
     if(sprite_id == INVALID_PLAYER_ID) {
         printf("Tried to load a player sprite for an invalid sprite ID.");
         return;
     };
+    if(sprite_id > MAX_CLIENTS || sprite_id < 0) return;
     printf("LOADING BMP %s\n", player_sprite_files[sprite_id]);
     fflush(stdout);
     SDL_Surface* surface = SDL_LoadBMP(player_sprite_files[sprite_id]);
@@ -700,18 +702,18 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     previous_time = current_time;
     total_time += delta_time;
     total_time = fmodf(total_time, 3600.0f);
-
+    shoot_timer -= delta_time;
     update_shader_data();
-    
+
     //if(should_update_sprites) {
-        for(int i = 0; i < MAX_CLIENTS; ++i) {
-            if(players[i].id == INVALID_PLAYER_ID) continue;
-            if(player_texture_map[i] != INVALID_PLAYER_TEXTURE) continue;
-            //TODO: breaks after 2 players
-            if(player_data[i].sprite_id != players[i].id) player_data[i].sprite_id = players[i].id;
-            load_player_sprite(player_data[i].sprite_id);
-        }
-        should_update_sprites = 0;
+    for(int i = 0; i < MAX_CLIENTS; ++i) {
+        if(players[i].id == INVALID_PLAYER_ID) continue;
+        if(player_texture_map[i] != INVALID_PLAYER_TEXTURE) continue;
+        //TODO: breaks after 2 players
+        if(player_data[i].sprite_id != players[i].id) player_data[i].sprite_id = players[i].id;
+        //load_player_sprite(player_data[i].sprite_id);
+    }
+    should_update_sprites = 0;
    // }
 
     if(is_update_locked) return SDL_APP_CONTINUE;

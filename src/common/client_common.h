@@ -11,3 +11,7 @@ extern PlayerStaticData local_player_data;
 
 extern void load_player_sprite(int sprite_index);
 extern char should_update_sprites;
+
+extern char can_shoot;
+extern float shoot_timer;
+#define SHOOT_COOLDOWN 0.1f;
