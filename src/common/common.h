@@ -14,9 +14,13 @@
 #define PLAYER_DYNAMIC_DATA_HEADER 0
 #define PLAYER_STATIC_DATA_HEADER 1
 #define BULLET_HEADER 2
+#define NO_ACTION 0
 
 #define PLAYER_HITBOX_WIDTH 100.0f
 #define PLAYER_HITBOX_HEIGHT 80.0f
+
+#define WINDOW_WIDTH 1280
+#define WINDOW_HEIGHT 720
 
 typedef struct {
     unsigned char header; // 0 for player position
@@ -39,3 +43,12 @@ typedef struct{
     float x, y;
 } Bullet; // Assign special value for a destroyed bullet,
 //  remember to assign a specific header when creating new bullet object
+
+
+typedef struct BulletNode BulletNode;
+
+typedef struct BulletNode {
+    Bullet bullet;
+    char direction; // 0 -> left, 1 -> right
+    BulletNode* next; // Pointer to the next BulletNode
+} BulletNode;

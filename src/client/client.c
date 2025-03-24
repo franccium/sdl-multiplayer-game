@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
@@ -11,11 +12,15 @@
 Player players[MAX_CLIENTS];
 Player players_last[MAX_CLIENTS];
 PlayerStaticData player_data[MAX_CLIENTS];
-Player local_player = {INVALID_PLAYER_ID, 100, 100};
+Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALID_PLAYER_ID,.x=100, .y=100, .collision_byte=0, .rotation=0};
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
 char is_player_initialized = 1;
 char is_update_locked = 0;
 char should_update_sprites = 0;
+#define ACTION_COOLDOWN_TIME 1000000
+
+pthread_mutex_t action_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 /*
 TODO:
 make a single define file for stuff like PORT, SERVER_IP, MAX_PLAYERS, sent structs (Player), etc
@@ -84,7 +89,7 @@ void receive_server_data(int client_socket) {
             break;
 
         case BULLET_HEADER:
-            printf("womp womp i don't know how to handle a bullet");
+            printf("cool it's a bullet\n");
             break;
 
         default:
@@ -110,17 +115,44 @@ void *client_communication(void *arg) {
 
 
     is_player_initialized = 1;
+    unsigned long last_action_time = 0; // Track the last time an action was sent
 
     while (1) {
         receive_server_data(client_socket);
-        if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
-            perror("Send failed");
-            break;
-        }else{
-     //       printf("sent %d, %f, %f, %d\n", local_player.id, local_player.x, local_player.y, local_player.header);
+    
+        // Check if there's an action and apply cooldown if needed
+        if (local_player.action) {
+            struct timeval current_time;
+            gettimeofday(&current_time, NULL); // Get current time
+    
+            unsigned long current_time_ms = (current_time.tv_sec * 1000000) + current_time.tv_usec; // Time in microseconds
+    
+            // Check if enough time has passed since the last action
+            if (current_time_ms - last_action_time > ACTION_COOLDOWN_TIME) {
+                last_action_time = current_time_ms; // Update last action time
+                if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                } else {
+                    printf("sent action %d\n", local_player.action);
+                }
+            } else {
+                printf("Cooldown active. Skipping action send.\n");
+            }
+        } else {
+            // If there's no action, send immediately without cooldown
+            if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
+                perror("Send failed");
+                break;
+            } else {
+                // printf("sent (no action)\n");
+            }
         }
-
-        //usleep(DATA_SEND_SLEEP_TIME);
+    
+        // Reset the action after sending
+        local_player.action = 0;
+    
+        usleep(DATA_SEND_SLEEP_TIME); // Delay between sending
     }
 
     close(client_socket);

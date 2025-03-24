@@ -52,7 +52,7 @@ add_library(SDL3::SDL3-shared SHARED IMPORTED)
 set_target_properties(SDL3::SDL3-shared PROPERTIES
   COMPATIBLE_INTERFACE_BOOL "SDL3_SHARED"
   COMPATIBLE_INTERFACE_STRING "SDL_VERSION"
-  INTERFACE_LINK_DEPENDS "/home/bawercx/rozpro_projekt/SDL/src/dynapi/SDL_dynapi.sym"
+  INTERFACE_LINK_DEPENDS "/home/krzysztof/uni/pr-test/sdl-multiplayer-game/SDL/src/dynapi/SDL_dynapi.sym"
   INTERFACE_LINK_LIBRARIES "SDL3::Headers"
   INTERFACE_SDL3_SHARED "TRUE"
   INTERFACE_SDL_VERSION "SDL3"
@@ -61,7 +61,7 @@ set_target_properties(SDL3::SDL3-shared PROPERTIES
 # Import target "SDL3::SDL3-shared" for configuration ""
 set_property(TARGET SDL3::SDL3-shared APPEND PROPERTY IMPORTED_CONFIGURATIONS NOCONFIG)
 set_target_properties(SDL3::SDL3-shared PROPERTIES
-  IMPORTED_LOCATION_NOCONFIG "/home/bawercx/rozpro_projekt/build/libSDL3.so.0.3.0"
+  IMPORTED_LOCATION_NOCONFIG "/home/krzysztof/uni/pr-test/sdl-multiplayer-game/build/libSDL3.so.0.3.0"
   IMPORTED_SONAME_NOCONFIG "libSDL3.so.0"
   )
 

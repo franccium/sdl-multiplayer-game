@@ -59,7 +59,7 @@ set_target_properties(SDL3::SDL3_test PROPERTIES
 set_property(TARGET SDL3::SDL3_test APPEND PROPERTY IMPORTED_CONFIGURATIONS NOCONFIG)
 set_target_properties(SDL3::SDL3_test PROPERTIES
   IMPORTED_LINK_INTERFACE_LANGUAGES_NOCONFIG "C"
-  IMPORTED_LOCATION_NOCONFIG "/home/bawercx/rozpro_projekt/build/SDL/libSDL3_test.a"
+  IMPORTED_LOCATION_NOCONFIG "/home/krzysztof/uni/pr-test/sdl-multiplayer-game/build/SDL/libSDL3_test.a"
   )
 
 # Make sure the targets which have been exported in some other

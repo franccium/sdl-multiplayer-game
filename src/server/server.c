@@ -19,8 +19,13 @@ PlayerStaticData player_data[MAX_CLIENTS];
 int client_sockets[MAX_CLIENTS];
 pthread_mutex_t players_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t bullets_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+BulletNode* head;
 int connected_clients_count = 0;
 int server_busy = 0;
+int bullets_count = 0;
+
 
 int health_check(int exp, const char *msg) {
     if (exp == -1) {
@@ -29,6 +34,77 @@ int health_check(int exp, const char *msg) {
     }
     return exp;
 }
+
+bool is_bullet_dead(BulletNode* bullet_node){
+    //check for dimensions
+    if (bullet_node->bullet.y > WINDOW_HEIGHT || bullet_node->bullet.y  < 0
+        || bullet_node->bullet.x > WINDOW_WIDTH|| bullet_node->bullet.y < 0){
+
+            printf("\nkilled a bullet %d\n", bullets_count);
+            return true;
+        }
+    
+    //check if it has hit a ship
+    
+    return false;
+}
+
+void add_bullet(Bullet new_bullet, char dir){
+    pthread_mutex_lock(&bullets_mutex);
+    if(dir){
+        dir -= 1; //0 -> left, 1-> right
+    }
+    BulletNode* new_node =(BulletNode*)malloc(sizeof(BulletNode)); 
+    memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
+    new_node->direction = dir;
+    if (head){
+        BulletNode* next = head->next;
+        head->next = new_node;
+        new_node->next = next;
+    }
+    else{
+        head = new_node;
+    }
+    bullets_count += 1;
+    printf("thats many bullets %d", bullets_count);
+    pthread_mutex_unlock(&bullets_mutex);
+}
+
+void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
+    if (!bullet_node) return;
+    bullet_node->bullet.x +=60;
+    printf("%f\n", bullet_node->bullet.x);
+    //todo
+    switch (bullet_node->direction) {
+    }
+}
+
+
+void update_bullets(){
+    BulletNode* current = head;
+    BulletNode* last = NULL;
+    for(int i =0; i<bullets_count; i++){
+        if(current){
+            update_bullet_position(current);
+            if (is_bullet_dead(current)){
+                if(last){
+                    last->next = current->next;
+                    bullets_count -= 1;
+                    printf("that many bullets left %d", bullets_count);
+                    free(current);
+                }
+                else{
+                    head = current->next;
+                }
+            }
+            else{
+                last = current;
+                current = current->next;
+            }
+        }
+    }
+}
+
 
 void check_collisions() {
     for (int i = 0; i < connected_clients_count; i++) {
@@ -53,14 +129,34 @@ void check_collisions() {
             collides = sat_obb_collision_check(&bbox, &otherBbox);
             if(collides){
                 ++collisionCount;
-                printf("%d collides with %d\n", players[i].id, players[j].id);
-                printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
+          //      printf("%d collides with %d\n", players[i].id, players[j].id);
+           //     printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
             }
             collides << j;
             collisionMatrix |= collides;
         }
-        printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
+       // printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
     }
+}
+
+
+void broadcast_bullets(){    
+    pthread_mutex_lock(&clients_mutex);
+    pthread_mutex_lock(&bullets_mutex);
+
+    update_bullets();
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] != UNUSED_SOCKET_ID) {
+            BulletNode* current = head;
+            while (current) {
+                send(client_sockets[i], &current->bullet, sizeof(Bullet), 0);
+                current = current->next;
+            }
+        }
+    }
+    pthread_mutex_unlock(&bullets_mutex);
+    pthread_mutex_unlock(&clients_mutex);
 }
 
 void broadcast_players() {
@@ -161,9 +257,22 @@ void *client_handler(void *arg) {
 #if PRINT_RECEIVED_DATA
         printf("received id:%d, {%f, %f, %f}\n", update.id, update.x, update.y, update.rotation);
 #endif
+
+        if(update.action){
+            Bullet new_bullet;
+            new_bullet.x = update.x;
+            new_bullet.y = update.y;
+            new_bullet.header = BULLET_HEADER;
+            add_bullet(new_bullet, update.action);
+            printf("new bullet");
+        }
+
         pthread_mutex_lock(&players_mutex);
+        update.action = 0;
         players[client_id] = update;
         pthread_mutex_unlock(&players_mutex);
+
+
     }
 
     // clean up on disconnect
@@ -188,6 +297,7 @@ void *broadcast_loop(void *arg) {
         if(server_busy) usleep(frame_delay_ms * 1000);
         check_collisions();
         broadcast_players();
+        broadcast_bullets();
         usleep(frame_delay_ms * 1000);
     }
     return NULL;
@@ -203,6 +313,7 @@ int initialize_server(int *server_socket) {
         player_data[i].header = PLAYER_STATIC_DATA_HEADER;
         players[i].id = INVALID_PLAYER_ID;
         player_data[i].id = INVALID_PLAYER_ID;
+        players[i].action = NO_ACTION;
     }
     
     // Create socket

@@ -646,6 +646,10 @@ void update_game(float dt) {
         rot += rotation_speed;
     }
 
+    if (state[SDL_SCANCODE_SPACE]){
+        local_player.action = 1;
+    }
+
     rot = fmodf(rot, 2.0f * PI);
     if (rot < 0.0f) {
         rot += 2.0f * PI;
