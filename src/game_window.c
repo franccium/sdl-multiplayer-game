@@ -711,7 +711,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         if(player_texture_map[i] != INVALID_PLAYER_TEXTURE) continue;
         //TODO: breaks after 2 players
         if(player_data[i].sprite_id != players[i].id) player_data[i].sprite_id = players[i].id;
-        //load_player_sprite(player_data[i].sprite_id);
+        load_player_sprite(player_data[i].sprite_id);
     }
     should_update_sprites = 0;
    // }

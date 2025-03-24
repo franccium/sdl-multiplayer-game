@@ -37,8 +37,8 @@ int health_check(int exp, const char *msg) {
 
 bool is_bullet_dead(BulletNode* bullet_node){
     //check for dimensions
-    if (bullet_node->bullet.y > WINDOW_HEIGHT || bullet_node->bullet.y  < 0
-        || bullet_node->bullet.x > WINDOW_WIDTH|| bullet_node->bullet.y < 0){
+    if (bullet_node->bullet.y > WINDOW_HEIGHT || bullet_node->bullet.y < 0
+        || bullet_node->bullet.x > WINDOW_WIDTH || bullet_node->bullet.x < 0) {
 
             printf("\nkilled a bullet %d\n", bullets_count);
             return true;
@@ -50,13 +50,18 @@ bool is_bullet_dead(BulletNode* bullet_node){
 }
 
 void add_bullet(Bullet new_bullet, char dir){
-    pthread_mutex_lock(&bullets_mutex);
     if(dir){
         dir -= 1; //0 -> left, 1-> right
     }
     BulletNode* new_node =(BulletNode*)malloc(sizeof(BulletNode)); 
+    if (!new_node) {
+        perror("Memory allocation failed");
+        return;
+    }
+    new_node->next = NULL; 
     memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
     new_node->direction = dir;
+    new_node->bullet.header = BULLET_HEADER;
     if (head){
         BulletNode* next = head->next;
         head->next = new_node;
@@ -67,7 +72,7 @@ void add_bullet(Bullet new_bullet, char dir){
     }
     bullets_count += 1;
     printf("thats many bullets %d", bullets_count);
-    pthread_mutex_unlock(&bullets_mutex);
+    
 }
 
 void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
@@ -81,32 +86,39 @@ void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever valu
 
 
 void update_bullets(){
+    pthread_mutex_lock(&bullets_mutex);
     BulletNode* current = head;
     BulletNode* last = NULL;
-    for(int i =0; i<bullets_count; i++){
-        if(current){
-            update_bullet_position(current);
-            if (is_bullet_dead(current)){
-                bullets_count -= 1;
-                if(last){
-                    last->next = current->next;
-                    printf("that many bullets left %d", bullets_count);
-                    free(current);
-                    current = NULL;
-                }
-                else{
-                    head = current->next;
-                    BulletNode* temp = current;
-                    current = current->next;
+    while(current){
+        update_bullet_position(current);
+        if (is_bullet_dead(current)){
+            bullets_count -= 1;
+            if(last){
+                last->next = current->next;
+                BulletNode* temp = current;
+                current = current->next;
+                if(temp){
                     free(temp);
+                    temp = NULL;
                 }
             }
             else{
-                last = current;
+                head = current->next;
+                BulletNode* temp = current;
                 current = current->next;
+                if(temp){
+                    free(temp);
+                    temp = NULL;
+                }
             }
         }
+        else{
+            last = current;
+            current = current->next;
+        }
     }
+    pthread_mutex_unlock(&bullets_mutex);
+
 }
 
 
@@ -146,10 +158,8 @@ void check_collisions() {
 
 void broadcast_bullets(){    
     pthread_mutex_lock(&clients_mutex);
-    pthread_mutex_lock(&bullets_mutex);
-
     update_bullets();
-
+    pthread_mutex_lock(&bullets_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (client_sockets[i] != UNUSED_SOCKET_ID) {
             BulletNode* current = head;
@@ -263,12 +273,14 @@ void *client_handler(void *arg) {
 #endif
 
         if(update.action){
+            pthread_mutex_lock(&bullets_mutex);
             Bullet new_bullet;
             new_bullet.x = update.x;
             new_bullet.y = update.y;
             new_bullet.header = BULLET_HEADER;
             add_bullet(new_bullet, update.action);
             printf("new bullet");
+            pthread_mutex_unlock(&bullets_mutex);
         }
 
         pthread_mutex_lock(&players_mutex);
@@ -359,6 +371,10 @@ int main() {
 
     while (1) {
         client_socket = malloc(sizeof(int));
+        if (client_socket == NULL) {
+            perror("Memory allocation failed");
+            continue;
+        }
         *client_socket = accept(server_socket, (struct sockaddr *)&client_address, &addr_len);
         if (*client_socket < 0) {
             perror("Accept failed");
