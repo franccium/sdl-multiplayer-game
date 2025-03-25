@@ -653,10 +653,11 @@ void update_players(float dt) {
         players_interpolated[i].rotation = lerp(players_last[i].rotation, players[i].rotation, t);
 #endif
     }
-
     for(int i = 0; i < existing_bullets; ++i) {
-        bullets_interpolated[i].x = lerp(bullets_last[i].x, bullets[i].x, t);
-        bullets_interpolated[i].y = lerp(bullets_last[i].y, bullets[i].y, t);
+        //bullets_interpolated[i].x = lerp(bullets_last[i].x, bullets[i].x, t);
+        //bullets_interpolated[i].y = lerp(bullets_last[i].y, bullets[i].y, t);
+        bullets_interpolated[i].x = bullets[i].x;
+        bullets_interpolated[i].y = bullets[i].y;
     }
 }
 

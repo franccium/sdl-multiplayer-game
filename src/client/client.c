@@ -16,6 +16,7 @@ Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALI
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
 
 Bullet* bullets;
+Bullet* bullets_render;
 Bullet* bullets_last;
 int existing_bullets = 0;
 
@@ -26,7 +27,7 @@ float shoot_timer = 0.0f;
 char can_shoot = 1;
 int bullet_capacity = BULLETS_DEFAULT_CAPACITY;
 
-
+pthread_mutex_t client_bullets_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*
 TODO:
@@ -104,9 +105,10 @@ void receive_server_data(int client_socket) {
                 is_update_locked = 0;
                 return;
             }
-            size_t bullets_to_copy = info[BULLET_COUNT_INDEX].id - 1;
+            size_t bullets_to_copy = info[BULLET_COUNT_INDEX].id;
             printf("copy %ld\n", bullets_to_copy);
             if (bullets_to_copy > bullet_capacity) {
+                printf("clients bullets overflowed >.<\n"); 
                 size_t new_capacity = bullets_to_copy * 2;
                 printf("overflowed, resizing to %ld\n", new_capacity);
 
@@ -127,7 +129,8 @@ void receive_server_data(int client_socket) {
             }
             //todo if not over last overflowed capacity for some set time, can go back to capacity /= 2 
             memcpy(bullets_last, bullets, bullets_to_copy * sizeof(Bullet)); //todo add the ones that wont be copied
-            memcpy(bullets, &info[1], bullets_to_copy * sizeof(Bullet));
+            memcpy(bullets, &info, bullets_to_copy * sizeof(Bullet));
+
             //memcpy(bullets, (Bullet*)buffer, sizeof(Bullet) * bullet_capacity);
 
             existing_bullets = info[BULLET_COUNT_INDEX].id;

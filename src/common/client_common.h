@@ -1,4 +1,5 @@
 #include "common.h" 
+#include <pthread.h>
 
 extern Player players[MAX_CLIENTS];
 extern Player players_last[MAX_CLIENTS];
@@ -9,9 +10,9 @@ extern char is_player_initialized;
 extern Player local_player;
 extern PlayerStaticData local_player_data;
 
-#define BULLETS_DEFAULT_CAPACITY 20
-#define BULLETS_DEFAULT_CAPACITY2 200
+#define BULLETS_DEFAULT_CAPACITY 400
 extern Bullet* bullets;
+extern Bullet* bullets_render;
 extern Bullet* bullets_last;
 extern int existing_bullets;
 extern int bullet_capacity;
@@ -21,4 +22,11 @@ extern char should_update_sprites;
 
 extern char can_shoot;
 extern float shoot_timer;
-#define SHOOT_COOLDOWN 0.1f;
+#define SHOOT_COOLDOWN 0.1f
+
+extern pthread_mutex_t client_bullets_mutex;
+
+#include <stdatomic.h>
+extern _Atomic(Bullet*) atomic_bullets_net;     // Network thread writes here
+extern  _Atomic(Bullet*) atomic_bullets_render;  // Render thread reads here
+extern  _Atomic size_t atomic_existing_bullets;

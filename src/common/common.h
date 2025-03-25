@@ -58,7 +58,7 @@ typedef struct{
 typedef struct BulletNode BulletNode;
 
 typedef struct BulletNode {
-    char is_alive;
     Bullet bullet;
     vec2 direction;
+    BulletNode* next; // Pointer to the next BulletNode
 } BulletNode;
