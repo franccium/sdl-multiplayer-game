@@ -13,7 +13,7 @@
 
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
 
-#define BUFFER_SIZE 80 //SIZE_OF_PLAYER-> the biggest struct
+#define BUFFER_SIZE 1024 //SIZE_OF_PLAYER-> the biggest struct
 #define PLAYER_DYNAMIC_SIZE 20
 
 #define PLAYER_DYNAMIC_DATA_HEADER 0
@@ -30,6 +30,7 @@
 #define WINDOW_HEIGHT 720
 
 #define BULLET_SPEED 1.0f
+#define BULLET_COUNT_INDEX 0
 
 typedef struct {
     unsigned char header; // 0 for player position
@@ -49,15 +50,15 @@ typedef struct {
 
 typedef struct{
     unsigned char header; // 2 for bullet
+    int id;
     float x, y;
 } Bullet; // Assign special value for a destroyed bullet,
 //  remember to assign a specific header when creating new bullet object
 
-
 typedef struct BulletNode BulletNode;
 
 typedef struct BulletNode {
+    char is_alive;
     Bullet bullet;
     vec2 direction;
-    BulletNode* next; // Pointer to the next BulletNode
 } BulletNode;

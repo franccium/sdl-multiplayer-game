@@ -12,6 +12,7 @@
 
 //NOTE: may need to find an optimal delay, or interpolate or sth if needed for performance, above 20 is too much
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
+#define MAX_BULLETS 20
 
 // global player state
 Player players[MAX_CLIENTS];
@@ -26,6 +27,9 @@ int connected_clients_count = 0;
 int server_busy = 0;
 int bullets_count = 0;
 
+// if there is more, send in batches
+BulletNode* bullets;
+int bullet_capacity = MAX_BULLETS;
 
 int health_check(int exp, const char *msg) {
     if (exp == -1) {
@@ -55,69 +59,16 @@ void get_bullet_direction(vec2 direction, Player *player) {
     direction[1] = sinf(angle);
 }
 
-void add_bullet(Bullet new_bullet, vec2 dir){
-    BulletNode* new_node =(BulletNode*)malloc(sizeof(BulletNode)); 
-    if (!new_node) {
-        perror("Memory allocation failed");
-        return;
-    }
-    new_node->next = NULL; 
-    memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
-    glm_vec2_copy(dir, new_node->direction);
-    new_node->bullet.header = BULLET_HEADER;
-    if (head){
-        BulletNode* next = head->next;
-        head->next = new_node;
-        new_node->next = next;
-    }
-    else{
-        head = new_node;
-    }
-    bullets_count += 1;
-    printf("thats many bullets %d", bullets_count);
-    
-}
-
-void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
-    if (!bullet_node) return;
-
-    bullet_node->bullet.x += bullet_node->direction[0] * BULLET_SPEED;
-    bullet_node->bullet.y += bullet_node->direction[1] * BULLET_SPEED;
-
-    printf("{%f, %f}\n", bullet_node->bullet.x, bullet_node->bullet.y);
-}
-
-
 void update_bullets(){
     pthread_mutex_lock(&bullets_mutex);
-    BulletNode* current = head;
-    BulletNode* last = NULL;
-    while(current){
-        update_bullet_position(current);
-        if (is_bullet_dead(current)){
-            bullets_count -= 1;
-            if(last){
-                last->next = current->next;
-                BulletNode* temp = current;
-                current = current->next;
-                if(temp){
-                    free(temp);
-                    temp = NULL;
-                }
-            }
-            else{
-                head = current->next;
-                BulletNode* temp = current;
-                current = current->next;
-                if(temp){
-                    free(temp);
-                    temp = NULL;
-                }
-            }
-        }
-        else{
-            last = current;
-            current = current->next;
+    for(int i = 0; i < bullets_count; ++i) { //todo to capacity
+        if(bullets[i].is_alive == 0) return;
+        bullets[i].bullet.x += bullets[i].direction[0] * BULLET_SPEED;
+        bullets[i].bullet.y += bullets[i].direction[1] * BULLET_SPEED;
+        //printf("b{%f, %f}\n", bullets[i].bullet.x, bullets[i].bullet.y);
+        if (is_bullet_dead(&bullets[i])){
+            bullets[i].is_alive = 0;
+            --bullets_count;
         }
     }
     pthread_mutex_unlock(&bullets_mutex);
@@ -161,18 +112,61 @@ void check_collisions() {
 void broadcast_bullets(){    
     pthread_mutex_lock(&clients_mutex);
     update_bullets();
+    
     pthread_mutex_lock(&bullets_mutex);
+    Bullet bullet_data[bullet_capacity]; 
+    bullet_data[BULLET_COUNT_INDEX].header = BULLET_HEADER;
+    bullet_data[BULLET_COUNT_INDEX].id = bullet_capacity - 2;
+    bullet_data[BULLET_COUNT_INDEX].x = bullets_count;
+    bullet_data[BULLET_COUNT_INDEX].y = bullets_count;
+    for (int i = 1; i < bullet_capacity; i++) {
+        bullet_data[i] = bullets[i - 1].bullet;
+        bullet_data[i].header = BULLET_HEADER;
+    }
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (client_sockets[i] != UNUSED_SOCKET_ID) {
-            BulletNode* current = head;
-            while (current) {
-                send(client_sockets[i], &current->bullet, sizeof(Bullet), 0);
-                current = current->next;
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (client_sockets[i] != UNUSED_SOCKET_ID) {
+                    send(client_sockets[i], bullet_data, sizeof(bullet_data), 0);
+                }
             }
         }
     }
     pthread_mutex_unlock(&bullets_mutex);
     pthread_mutex_unlock(&clients_mutex);
+}
+
+int find_empty_bullet_id() {
+    for(int i = 0; i < bullet_capacity; ++i) {
+        if(bullets[i].is_alive != 0) continue;
+
+        return i;
+    }
+    return bullet_capacity;
+}
+
+void add_bullet(Player* player) {
+    int empty_id = find_empty_bullet_id();
+    if(empty_id >= bullet_capacity) {
+        printf("server bullets overflow");
+        bullet_capacity *= 2;
+        bullets = realloc(bullets, sizeof(BulletNode) * bullet_capacity);
+        //memset(&bullets[empty_id], 0, sizeof(BulletNode) * bullet_capacity / 2);
+        return;
+    }
+    bullets[empty_id] = (BulletNode){
+        .bullet = {
+            .header = BULLET_HEADER,
+            .id = empty_id,
+            .x = player->x,
+            .y = player->y,
+        },
+        .is_alive = 1,
+    };
+    get_bullet_direction(bullets[empty_id].direction, player);
+    //memcpy(&bullets[empty_id], &node, sizeof(BulletNode));
+    ++bullets_count;
+    printf("new bullet id %d  | total count %d\n", empty_id, bullets_count);
 }
 
 void broadcast_players() {
@@ -276,14 +270,7 @@ void *client_handler(void *arg) {
 
         if(update.action){
             pthread_mutex_lock(&bullets_mutex);
-            Bullet new_bullet;
-            new_bullet.x = update.x;
-            new_bullet.y = update.y;
-            new_bullet.header = BULLET_HEADER;
-            vec2 direction;
-            get_bullet_direction(direction, &update);
-            add_bullet(new_bullet, direction);
-            printf("new bullet");
+            add_bullet(&update);
             pthread_mutex_unlock(&bullets_mutex);
         }
 
@@ -363,6 +350,7 @@ int main() {
     memset(client_sockets, UNUSED_SOCKET_ID, sizeof(client_sockets));
     memset(players, 0, sizeof(players));
     memset(player_data, 0, sizeof(player_data));
+    bullets = (BulletNode*)calloc(sizeof(BulletNode) * MAX_BULLETS, sizeof(BulletNode));
 
     if (initialize_server(&server_socket) < 0) {
         fprintf(stderr, "Server initialization failed\n");

@@ -15,7 +15,7 @@
 #define WINDOW_HEIGHT 720
 #define PLAYER_SPRITE_COUNT 5
 Player players_interpolated[MAX_CLIENTS];
-Player bullets_interpolated[BULLETS_DEFAULT_CAPACITY];
+Bullet bullets_interpolated[BULLETS_DEFAULT_CAPACITY];
 
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
@@ -516,14 +516,14 @@ void draw_bullets() {
 
         float x = bullets_interpolated[i].x - BULLET_SPRITE_WIDTH / 2;
         float y = bullets_interpolated[i].y - BULLET_SPRITE_HEIGHT / 2;
-        DrawSprite(player_texture_map[i], x, y, BULLET_SPRITE_WIDTH, 
+        DrawSprite(bullet_texture, x, y, BULLET_SPRITE_WIDTH, 
            BULLET_SPRITE_HEIGHT, 0.0f, BULLET_Z_COORD_MIN + BULLET_Z_COORD_MULTIPLIER * i);
             
         pglUseProgramObjectARB(0);
 
         RotatedRect bbox = {
             { bullets[i].x, bullets[i].y },
-            { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+            { BULLET_HITBOX_WIDTH/2, BULLET_HITBOX_HEIGHT/2 },
             0.0f
         };
         draw_rotated_bounding_box(&bbox, 0.4f + 0.05 * i);
@@ -595,6 +595,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     for(int i = 0; i <MAX_CLIENTS; ++i) {
         player_texture_map[i] = INVALID_PLAYER_TEXTURE;
     }
+    bullets = (Bullet*)malloc(sizeof(Bullet) * BULLETS_DEFAULT_CAPACITY);
+    bullets_last = (Bullet*)malloc(sizeof(Bullet) * BULLETS_DEFAULT_CAPACITY);
 
     SDL_Surface* water_surface = SDL_LoadBMP(water_file);
     water_texture = SDL_GL_LoadTexture(water_surface);
@@ -750,7 +752,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     should_update_sprites = 0;
    // }
 
-    if(is_update_locked) return SDL_APP_CONTINUE;
+    if(is_update_locked) {
+        return SDL_APP_CONTINUE;
+    } 
     update_game(delta_time);
     render_game();
     

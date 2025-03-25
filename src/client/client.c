@@ -15,8 +15,8 @@ PlayerStaticData player_data[MAX_CLIENTS];
 Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALID_PLAYER_ID,.x=100, .y=100, .collision_byte=0, .rotation=0};
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
 
-Bullet bullets[BULLETS_DEFAULT_CAPACITY];
-Bullet bullets_last[BULLETS_DEFAULT_CAPACITY];
+Bullet* bullets;
+Bullet* bullets_last;
 int existing_bullets = 0;
 
 char is_player_initialized = 1;
@@ -24,8 +24,9 @@ char is_update_locked = 0;
 char should_update_sprites = 0;
 float shoot_timer = 0.0f;
 char can_shoot = 1;
+int bullet_capacity = BULLETS_DEFAULT_CAPACITY;
 
-pthread_mutex_t action_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 
 /*
 TODO:
@@ -95,15 +96,43 @@ void receive_server_data(int client_socket) {
             break;
 
         case BULLET_HEADER:
-            printf("cool it's a bullet\n");
-            Bullet *bullet = (Bullet*)buffer;
-        
-            memcpy(&bullets_last[existing_bullets], &bullets[existing_bullets], sizeof(Bullet));
-            memcpy(&bullets[existing_bullets], bullet, sizeof(Bullet));
-            ++existing_bullets;
-            for(int i = 0; i < existing_bullets; i++) {
-                printf("known bullet: {%f, %f}\n", bullets[i].x, bullets[i].y);
+            is_update_locked = 1;
+            //printf("cool it's a bullet\n");
+            Bullet* info = (Bullet*)buffer;
+            if (info[BULLET_COUNT_INDEX].id <= 0) {
+                // get out asap before integers overflow
+                is_update_locked = 0;
+                return;
             }
+            size_t bullets_to_copy = info[BULLET_COUNT_INDEX].id - 1;
+            printf("copy %ld\n", bullets_to_copy);
+            if (bullets_to_copy > bullet_capacity) {
+                size_t new_capacity = bullets_to_copy * 2;
+                printf("overflowed, resizing to %ld\n", new_capacity);
+
+                Bullet *new_bullets = realloc(bullets, sizeof(Bullet) * new_capacity);
+                Bullet *new_bullets_last = realloc(bullets_last, sizeof(Bullet) * new_capacity);
+
+                if (!new_bullets || !new_bullets_last) {
+                    perror("realloc failed");
+                    free(new_bullets);
+                    free(new_bullets_last);
+                    is_update_locked = 0;
+                    return;
+                }
+
+                bullets = new_bullets;
+                bullets_last = new_bullets_last;
+                bullet_capacity = new_capacity;
+            }
+            //todo if not over last overflowed capacity for some set time, can go back to capacity /= 2 
+            memcpy(bullets_last, bullets, bullets_to_copy * sizeof(Bullet)); //todo add the ones that wont be copied
+            memcpy(bullets, &info[1], bullets_to_copy * sizeof(Bullet));
+            //memcpy(bullets, (Bullet*)buffer, sizeof(Bullet) * bullet_capacity);
+
+            existing_bullets = info[BULLET_COUNT_INDEX].id;
+
+            is_update_locked = 0;
             break;
 
         default:
@@ -181,3 +210,4 @@ void connect_to_server() {
     pthread_create(&tid, NULL, client_communication, socket_ptr);
     pthread_detach(tid);
 }
+
