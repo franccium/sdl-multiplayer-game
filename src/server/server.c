@@ -44,10 +44,29 @@ bool is_bullet_dead(BulletNode* bullet_node){
             printf("\nkilled a bullet %d\n", bullets_count);
             return true;
         }
-    
+    RotatedRect bbox = {
+        { bullet_node->bullet.x, bullet_node->bullet.y },
+        { BULLET_HITBOX_WIDTH / 2.0f, BULLET_HITBOX_HEIGHT / 2.0f },
+        0.0f
+    };
+
     //check if it has hit a ship
+    // id do it with other collision code but for now ok
+    bool collides;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if(client_sockets[i] == UNUSED_SOCKET_ID
+            || players[i].id == bullet_node->shooter_id) continue;
+
+        RotatedRect otherBbox = {
+            { players[i].x, players[i].y },
+            { PLAYER_HITBOX_WIDTH / 2.0f, PLAYER_HITBOX_HEIGHT / 2.0f },
+            players[i].rotation
+        };
+        collides = sat_obb_collision_check(&bbox, &otherBbox);
+        if(collides) break;
+    }
     
-    return false;
+    return collides;
 }
 
 void get_bullet_direction(vec2 direction, Player *player) {
@@ -56,16 +75,21 @@ void get_bullet_direction(vec2 direction, Player *player) {
     direction[1] = sinf(angle);
 }
 
-void add_bullet(Bullet new_bullet, vec2 dir){
+void add_bullet(Player* shooter){
     BulletNode* new_node =(BulletNode*)malloc(sizeof(BulletNode)); 
     if (!new_node) {
         perror("Memory allocation failed");
         return;
     }
+    Bullet new_bullet;
+    new_bullet.x = shooter->x;
+    new_bullet.y = shooter->y;
+    new_bullet.header = BULLET_HEADER;
+    vec2 direction;
     new_node->next = NULL; 
+    new_node->shooter_id = shooter->id; 
     memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
-    glm_vec2_copy(dir, new_node->direction);
-    new_node->bullet.header = BULLET_HEADER;
+    get_bullet_direction(new_node->direction, shooter);
     new_node->bullet.id = bid;
     ++bid;
     if (head){
@@ -133,7 +157,7 @@ void check_collisions() {
         char collisionCount = 0;
         RotatedRect bbox = {
             { players[i].x, players[i].y },
-            { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+            { PLAYER_HITBOX_WIDTH / 2.0f, PLAYER_HITBOX_HEIGHT / 2.0f },
             players[i].rotation
         };
 
@@ -142,7 +166,7 @@ void check_collisions() {
 
             RotatedRect otherBbox = {
                 { players[j].x, players[j].y },
-                { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+                { PLAYER_HITBOX_WIDTH / 2.0f, PLAYER_HITBOX_HEIGHT / 2.0f },
                 players[j].rotation
             };
 
@@ -262,6 +286,7 @@ void *client_handler(void *arg) {
         close(client_socket);
         return NULL;
     }
+    players[client_id].hp = INITIAL_PLAYER_HP;
     send(client_socket, &players[client_id].id, sizeof(char), 0);
 
     server_busy = 1;
@@ -292,16 +317,10 @@ void *client_handler(void *arg) {
         printf("received id:%d, {%f, %f, %f}\n", update.id, update.x, update.y, update.rotation);
 #endif
 
-        if(update.action){
+        if(update.action) {
             pthread_mutex_lock(&bullets_mutex);
-            //printf("received action %d -- ", update.action);
-            Bullet new_bullet;
-            new_bullet.x = update.x;
-            new_bullet.y = update.y;
-            new_bullet.header = BULLET_HEADER;
-            vec2 direction;
-            get_bullet_direction(direction, &update);
-            add_bullet(new_bullet, direction);
+            printf("from %d received action %d -- ", update.id, update.action);
+            add_bullet(&update);
             //printf("new bullet");
             pthread_mutex_unlock(&bullets_mutex);
         }

@@ -12,7 +12,7 @@
 Player players[MAX_CLIENTS];
 Player players_last[MAX_CLIENTS];
 PlayerStaticData player_data[MAX_CLIENTS];
-Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALID_PLAYER_ID,.x=100, .y=100, .collision_byte=0, .rotation=0};
+Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALID_PLAYER_ID, .hp=INITIAL_PLAYER_HP, .x=100, .y=100, .collision_byte=0, .rotation=0};
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
 
 Bullet* bullets;
@@ -133,7 +133,7 @@ void receive_server_data(int client_socket) {
             memcpy(bullets, &info[1], bullets_to_copy * sizeof(Bullet));
 
             //memcpy(bullets, (Bullet*)buffer, sizeof(Bullet) * bullet_capacity);
-
+            //printf("got bullets : %d\n", existing_bullets);
             existing_bullets = info[BULLET_COUNT_INDEX].id;
 
             is_update_locked = 0;
@@ -165,7 +165,6 @@ void *client_communication(void *arg) {
 
     while (1) {
         receive_server_data(client_socket);
-    
         // Check if there's an action and apply cooldown if needed
         if ((shoot_timer > 0.0f)) {
             local_player.action = NO_ACTION;

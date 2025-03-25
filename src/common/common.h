@@ -38,12 +38,17 @@
 #define SHOOT_RIGHT 1.0
 #define SHOOT_LEFT -1.0
 
+#define INITIAL_PLAYER_HP 100
+#define BULLET_DAMAGE 20
+#define BOAT_COLLISION_DAMAGE 30
+
 typedef struct {
     unsigned char header; // 0 for player position
     char id;
     char action; // 0 -> no action, 1 -> shoot left, 2 -> shoot right
     unsigned char collision_byte; //each bit specifies whether collision occurs with a specific player
     // example: 00000010 -> collision with player 2, 00000100 collision with player 4, simillar to dr's Lebiedź marking solution
+    int hp;
     float x, y, rotation;
 } Player;
 
@@ -66,5 +71,6 @@ typedef struct BulletNode BulletNode;
 typedef struct BulletNode {
     Bullet bullet;
     vec2 direction;
+    char shooter_id; // need this to avoid bullet colliding with the shooter 
     BulletNode* next; // Pointer to the next BulletNode
 } BulletNode;

@@ -43,13 +43,17 @@ const char* player_sprite_files[MAX_CLIENTS] = {
     "../resources/sprites/boat-05.bmp"
 };
 const char* water_file = "../resources/sprites/water_noise.bmp";
+const char* hp_bar_file = "../resources/sprites/boat-hp-bar-01.bmp";
 const char* bullet_sprite_file = "../resources/sprites/bullet.bmp";
+const char* foam_file = "../resources/sprites/foam1.bmp";
 const char* water_frag = "../resources/shaders/water_frag.glsl";
 const char* water_vert = "../resources/shaders/water_vert.glsl";
 GLuint player_texture_map[MAX_CLIENTS];
 #define INVALID_PLAYER_TEXTURE 4294967295 //? no idea if i can do that
 GLuint water_texture;
 GLuint bullet_texture;
+GLuint foam_texture;
+GLuint hp_bar_texture;
 
 SDL_Texture *LoadTexture(SDL_Renderer *renderer, const char *file, bool transparent);
 static bool InitShaders(void);
@@ -68,6 +72,7 @@ enum
     PLAYER_SHADER = 0,
     WATER_SHADER,
     BULLET_SHADER,
+    HP_BAR_SHADER,
     NUM_SHADERS
 };
 ShaderData shaders[NUM_SHADERS];
@@ -302,6 +307,8 @@ static bool InitShaders(void)
     shaders[PLAYER_SHADER].frag_source = "../resources/shaders/boat_frag.glsl";
     shaders[BULLET_SHADER].vert_source = "../resources/shaders/bullet_vert.glsl";
     shaders[BULLET_SHADER].frag_source = "../resources/shaders/bullet_frag.glsl";
+    shaders[HP_BAR_SHADER].vert_source = "../resources/shaders/hp_vert.glsl";
+    shaders[HP_BAR_SHADER].frag_source = "../resources/shaders/hp_frag.glsl";
     shaders[WATER_SHADER].vert_source = "../resources/shaders/water_vert.glsl";
     shaders[WATER_SHADER].frag_source = "../resources/shaders/water_frag.glsl";
 
@@ -498,6 +505,8 @@ void draw_players() {
         DrawSprite(player_texture_map[i], x, y, PLAYER_SPRITE_WIDTH, 
            PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN + PLAYER_Z_COORD_MULTIPLIER * i);
             
+        //DrawSprite(foam_texture, x, y, PLAYER_SPRITE_WIDTH, PLAYER_SPRITE_HEIGHT, angle, PLAYER_Z_COORD_MIN - 0.1);
+            
         pglUseProgramObjectARB(0);
 
         RotatedRect bbox = {
@@ -546,6 +555,18 @@ void draw_water() {
     //printf("water tex%u\n",  water_texture);
 }
 
+void draw_ui() {
+    float sprite_width = PLAYER_SPRITE_WIDTH;
+    float sprite_height = PLAYER_SPRITE_HEIGHT;
+    pglUseProgramObjectARB(shaders[HP_BAR_SHADER].program);
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    DrawSprite(hp_bar_texture, 20.0f, 20.0f, sprite_width, 
+            sprite_height, 0.0f, 0.95f);
+    pglUseProgramObjectARB(0);
+    //printf("water tex%u\n",  water_texture);
+}
+
 void draw_scene() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
@@ -559,6 +580,7 @@ void draw_scene() {
     draw_water();
     draw_bullets();
     draw_players();
+    draw_ui();
 
     SDL_GL_SwapWindow(window);
 }
@@ -609,6 +631,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     bullet_texture = SDL_GL_LoadTexture(bullet_surface);
     printf("LOADED BMP : %s\n", bullet_sprite_file);
     SDL_DestroySurface(bullet_surface);
+
+    SDL_Surface* foam = SDL_LoadBMP(foam_file);
+    foam_texture = SDL_GL_LoadTexture(foam);
+    printf("LOADED BMP : %s\n", foam_file);
+    SDL_DestroySurface(foam);
+
+    SDL_Surface* hp = SDL_LoadBMP(hp_bar_file);
+    hp_bar_texture = SDL_GL_LoadTexture(hp);
+    printf("LOADED BMP : %s\n", hp_bar_file);
+    SDL_DestroySurface(hp);
 
     InitGL(WINDOW_WIDTH, WINDOW_HEIGHT);
     connect_to_server();
@@ -693,6 +725,13 @@ void update_game(float dt) {
     if (state[SDL_SCANCODE_D]) {
         rot += rotation_speed;
     }
+    if (state[SDL_SCANCODE_Y]) { //! hp debug
+        if(shoot_timer < 0.0f) {
+            local_player.hp -= 5;
+            shoot_timer = SHOOT_COOLDOWN;
+            printf("HP: %d\n", local_player.hp);
+        }
+    }
 
     if (state[SDL_SCANCODE_Q]){
         if(shoot_timer < 0.0f)
@@ -744,12 +783,24 @@ void update_shader_data() {
         pglUniform1fARB(location, 500.0f / 1280.0f);
     }
 
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_playerRotation");
+    if (location >= 0) {
+        pglUniform1fARB(location, local_player.rotation);
+    }
+
     pglUseProgramObjectARB(0);
 
     pglUseProgramObjectARB(shaders[BULLET_SHADER].program);
     location = pglGetUniformLocationARB(shaders[BULLET_SHADER].program, "u_time");
     if (location >= 0) {
         pglUniform1fARB(location, total_time);
+    }
+    pglUseProgramObjectARB(0);
+
+    pglUseProgramObjectARB(shaders[HP_BAR_SHADER].program);
+    location = pglGetUniformLocationARB(shaders[HP_BAR_SHADER].program, "u_hpPercentage");
+    if (location >= 0) {
+        pglUniform1fARB(location, (float)local_player.hp / INITIAL_PLAYER_HP);
     }
     pglUseProgramObjectARB(0);
 }
