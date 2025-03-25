@@ -15,15 +15,14 @@
 #define WINDOW_HEIGHT 720
 #define PLAYER_SPRITE_COUNT 5
 Player players_interpolated[MAX_CLIENTS];
-Bullet bullets_interpolated[BULLETS_DEFAULT_CAPACITY];
+Bullet bullets_interpolated[BULLETS_DEFAULT_CAPACITY]; //NOTE: if we want to fit more bullets that capacitry, this needs to be a dynamic array
 
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 
 #define PLAYER_SPRITE_WIDTH 128.0f
 #define PLAYER_SPRITE_HEIGHT 96.0f
-#define BULLET_SPRITE_WIDTH 32.0f
-#define BULLET_SPRITE_HEIGHT 32.0f
+
 //#define PLAYER_SPRITE_WIDTH 640.0f
 //#define PLAYER_SPRITE_HEIGHT 360.0f
 
@@ -68,6 +67,7 @@ enum
 {
     PLAYER_SHADER = 0,
     WATER_SHADER,
+    BULLET_SHADER,
     NUM_SHADERS
 };
 ShaderData shaders[NUM_SHADERS];
@@ -300,6 +300,8 @@ static bool InitShaders(void)
 
     shaders[PLAYER_SHADER].vert_source = "../resources/shaders/boat_vert.glsl";
     shaders[PLAYER_SHADER].frag_source = "../resources/shaders/boat_frag.glsl";
+    shaders[BULLET_SHADER].vert_source = "../resources/shaders/bullet_vert.glsl";
+    shaders[BULLET_SHADER].frag_source = "../resources/shaders/bullet_frag.glsl";
     shaders[WATER_SHADER].vert_source = "../resources/shaders/water_vert.glsl";
     shaders[WATER_SHADER].frag_source = "../resources/shaders/water_frag.glsl";
 
@@ -446,7 +448,7 @@ static void DrawSprite(GLuint texture, float x, float y,
     glEnable(GL_TEXTURE_2D);
     glPushMatrix();
     // rotate around origin
-    width *= 1.63f;
+    //width *= 1.63f;
     glTranslatef(x, y, z);
     glTranslatef(width / 2.0f, height / 2.0f, 0.0f);
     glRotatef((GLfloat)to_degrees(angle), 0.0f, 0.0f, 1.0f);
@@ -510,12 +512,12 @@ void draw_players() {
 
 void draw_bullets() {
     glColor3f(1.0f, 1.0f, 1.0f);
-    //pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
+    //pglUseProgramObjectARB(shaders[BULLET_SHADER].program);
     for(int i = 0; i < existing_bullets; ++i) {
-        pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
+        pglUseProgramObjectARB(shaders[BULLET_SHADER].program);
 
-        float x = bullets_interpolated[i].x - BULLET_SPRITE_WIDTH / 2;
-        float y = bullets_interpolated[i].y - BULLET_SPRITE_HEIGHT / 2;
+        float x = bullets[i].x - BULLET_SPRITE_WIDTH / 2;
+        float y = bullets[i].y - BULLET_SPRITE_HEIGHT / 2;
         DrawSprite(bullet_texture, x, y, BULLET_SPRITE_WIDTH, 
            BULLET_SPRITE_HEIGHT, 0.0f, BULLET_Z_COORD_MIN + BULLET_Z_COORD_MULTIPLIER * i);
             
@@ -596,7 +598,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         player_texture_map[i] = INVALID_PLAYER_TEXTURE;
     }
     bullets = (Bullet*)malloc(sizeof(Bullet) * BULLETS_DEFAULT_CAPACITY);
-    bullets_last = (Bullet*)malloc(sizeof(Bullet) * BULLETS_DEFAULT_CAPACITY);
+    bullets_last = (Bullet*)calloc(BULLETS_DEFAULT_CAPACITY, sizeof(Bullet));
 
     SDL_Surface* water_surface = SDL_LoadBMP(water_file);
     water_texture = SDL_GL_LoadTexture(water_surface);
@@ -653,12 +655,19 @@ void update_players(float dt) {
         players_interpolated[i].rotation = lerp(players_last[i].rotation, players[i].rotation, t);
 #endif
     }
+    /*
     for(int i = 0; i < existing_bullets; ++i) {
+        if(bullets_last[i].id != bullets[i].id) {
+            //! found a killed bullet 
+            //TODO: need handling or nah?
+            // override or set position to something out of the screen to be sure its not visible
+            //bullets_last[i] = bullets[i];
+        }
         //bullets_interpolated[i].x = lerp(bullets_last[i].x, bullets[i].x, t);
         //bullets_interpolated[i].y = lerp(bullets_last[i].y, bullets[i].y, t);
         bullets_interpolated[i].x = bullets[i].x;
         bullets_interpolated[i].y = bullets[i].y;
-    }
+    }*/
 }
 
 void render_game() {
@@ -685,8 +694,13 @@ void update_game(float dt) {
         rot += rotation_speed;
     }
 
-    if (state[SDL_SCANCODE_SPACE]){
-        local_player.action = 1;
+    if (state[SDL_SCANCODE_Q]){
+        if(shoot_timer < 0.0f)
+            local_player.action = SHOOT_RIGHT;
+    }
+    else if (state[SDL_SCANCODE_E]){
+        if(shoot_timer < 0.0f)
+            local_player.action = SHOOT_LEFT;
     }
 
     rot = fmodf(rot, 2.0f * PI);
@@ -730,6 +744,13 @@ void update_shader_data() {
         pglUniform1fARB(location, 500.0f / 1280.0f);
     }
 
+    pglUseProgramObjectARB(0);
+
+    pglUseProgramObjectARB(shaders[BULLET_SHADER].program);
+    location = pglGetUniformLocationARB(shaders[BULLET_SHADER].program, "u_time");
+    if (location >= 0) {
+        pglUniform1fARB(location, total_time);
+    }
     pglUseProgramObjectARB(0);
 }
 

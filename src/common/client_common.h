@@ -10,7 +10,7 @@ extern char is_player_initialized;
 extern Player local_player;
 extern PlayerStaticData local_player_data;
 
-#define BULLETS_DEFAULT_CAPACITY 400
+#define BULLETS_DEFAULT_CAPACITY 256
 extern Bullet* bullets;
 extern Bullet* bullets_render;
 extern Bullet* bullets_last;
@@ -22,7 +22,7 @@ extern char should_update_sprites;
 
 extern char can_shoot;
 extern float shoot_timer;
-#define SHOOT_COOLDOWN 0.1f
+#define SHOOT_COOLDOWN 0.2f
 
 extern pthread_mutex_t client_bullets_mutex;
 

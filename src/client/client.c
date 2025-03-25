@@ -106,9 +106,10 @@ void receive_server_data(int client_socket) {
                 return;
             }
             size_t bullets_to_copy = info[BULLET_COUNT_INDEX].id;
-            printf("copy %ld\n", bullets_to_copy);
+            //printf("copy %ld\n", bullets_to_copy);
             if (bullets_to_copy > bullet_capacity) {
                 printf("clients bullets overflowed >.<\n"); 
+                return; //NOTE: if we want to fit more bullets than capacitry, bullets_interpolated needs to be a dynamic array (and increased buffer size / batches for sending them)
                 size_t new_capacity = bullets_to_copy * 2;
                 printf("overflowed, resizing to %ld\n", new_capacity);
 
@@ -128,8 +129,8 @@ void receive_server_data(int client_socket) {
                 bullet_capacity = new_capacity;
             }
             //todo if not over last overflowed capacity for some set time, can go back to capacity /= 2 
-            memcpy(bullets_last, bullets, bullets_to_copy * sizeof(Bullet)); //todo add the ones that wont be copied
-            memcpy(bullets, &info, bullets_to_copy * sizeof(Bullet));
+            memcpy(bullets_last, bullets, sizeof(bullets)); //todo add the ones that wont be copied
+            memcpy(bullets, &info[1], bullets_to_copy * sizeof(Bullet));
 
             //memcpy(bullets, (Bullet*)buffer, sizeof(Bullet) * bullet_capacity);
 
@@ -161,14 +162,13 @@ void *client_communication(void *arg) {
 
 
     is_player_initialized = 1;
-    unsigned long last_action_time = 0; // Track the last time an action was sent
 
     while (1) {
         receive_server_data(client_socket);
     
         // Check if there's an action and apply cooldown if needed
         if ((shoot_timer > 0.0f)) {
-            local_player.action = 0;
+            local_player.action = NO_ACTION;
         }
         // If there's no action, send immediately without cooldown
         if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
@@ -176,7 +176,9 @@ void *client_communication(void *arg) {
             break;
         } else {
             // printf("sent (no action)\n");
-            if(local_player.action == 1) shoot_timer = SHOOT_COOLDOWN;
+            if(local_player.action == SHOOT_LEFT || local_player.action == SHOOT_RIGHT) {
+                shoot_timer = SHOOT_COOLDOWN;
+            }
         }
 
         //printf("shoot cd: %f\n", shoot_timer);

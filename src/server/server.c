@@ -25,6 +25,7 @@ BulletNode* head;
 int connected_clients_count = 0;
 int server_busy = 0;
 int bullets_count = 0;
+unsigned char bid = 1; //NOTE: the client's buffer size can only a limited amount of bullets anyways, so if we really want more we either increase buffer size or send them in batches
 
 int health_check(int exp, const char *msg) {
     if (exp == -1) {
@@ -36,8 +37,9 @@ int health_check(int exp, const char *msg) {
 
 bool is_bullet_dead(BulletNode* bullet_node){
     //check for dimensions
-    if (bullet_node->bullet.y > WINDOW_HEIGHT || bullet_node->bullet.y < 0
-        || bullet_node->bullet.x > WINDOW_WIDTH || bullet_node->bullet.x < 0) {
+    float tolerance = BULLET_SPRITE_WIDTH + 16.0f; // dont want them to disappear before going fully out of bounds
+    if (bullet_node->bullet.y > WINDOW_HEIGHT + tolerance || bullet_node->bullet.y < -tolerance
+        || bullet_node->bullet.x > WINDOW_WIDTH - tolerance || bullet_node->bullet.x < -tolerance) {
 
             printf("\nkilled a bullet %d\n", bullets_count);
             return true;
@@ -49,7 +51,7 @@ bool is_bullet_dead(BulletNode* bullet_node){
 }
 
 void get_bullet_direction(vec2 direction, Player *player) {
-    float angle = player->rotation + PI / 4.0f;
+    float angle = player->rotation + player->action * (PI / 2.0f);
     direction[0] = cosf(angle);
     direction[1] = sinf(angle);
 }
@@ -64,6 +66,8 @@ void add_bullet(Bullet new_bullet, vec2 dir){
     memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
     glm_vec2_copy(dir, new_node->direction);
     new_node->bullet.header = BULLET_HEADER;
+    new_node->bullet.id = bid;
+    ++bid;
     if (head){
         BulletNode* next = head->next;
         head->next = new_node;
@@ -73,8 +77,7 @@ void add_bullet(Bullet new_bullet, vec2 dir){
         head = new_node;
     }
     bullets_count += 1;
-    printf("thats many bullets %d", bullets_count);
-    
+    //printf("thats many bullets %d", bullets_count);
 }
 
 void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
@@ -83,7 +86,7 @@ void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever valu
     bullet_node->bullet.x += bullet_node->direction[0] * BULLET_SPEED;
     bullet_node->bullet.y += bullet_node->direction[1] * BULLET_SPEED;
 
-    printf("{%f, %f}\n", bullet_node->bullet.x, bullet_node->bullet.y);
+    //printf("{%f, %f}\n", bullet_node->bullet.x, bullet_node->bullet.y);
 }
 
 
@@ -161,15 +164,23 @@ void broadcast_bullets(){
     pthread_mutex_lock(&clients_mutex);
     update_bullets();
     BulletNode* current = head;
-    Bullet readyBullets[bullets_count];
-    int i = 0;
+    Bullet readyBullets[bullets_count + 1];
+    readyBullets[0].header = BULLET_HEADER;
+    readyBullets[0].id = bullets_count;
+    int i = 1;
     while (current) {
         readyBullets[i] = current->bullet;
         current = current->next;
         ++i;
     }
+    if(bullets_count > MAX_BULLETS_PER_BUFFER) {
+        printf("bullets can overflow the buffer, how did we get there?\n");
+        pthread_mutex_unlock(&clients_mutex);
+        return;
+    }
+    //printf("sending %d bullets", bullets_count);
     //readyBullets[0].header += 100*bullets_count;
-    readyBullets[0].id = bullets_count;
+    //readyBullets[0].id = bullets_count;
 
     pthread_mutex_lock(&bullets_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -283,6 +294,7 @@ void *client_handler(void *arg) {
 
         if(update.action){
             pthread_mutex_lock(&bullets_mutex);
+            //printf("received action %d -- ", update.action);
             Bullet new_bullet;
             new_bullet.x = update.x;
             new_bullet.y = update.y;
@@ -290,12 +302,12 @@ void *client_handler(void *arg) {
             vec2 direction;
             get_bullet_direction(direction, &update);
             add_bullet(new_bullet, direction);
-            printf("new bullet");
+            //printf("new bullet");
             pthread_mutex_unlock(&bullets_mutex);
         }
 
         pthread_mutex_lock(&players_mutex);
-        update.action = 0;
+        update.action = NO_ACTION;
         players[client_id] = update;
         pthread_mutex_unlock(&players_mutex);
 
