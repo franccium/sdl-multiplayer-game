@@ -5,10 +5,12 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <time.h>
 
 #include "server.h"
 #include "common/common.h"
 #include "common/collisions.h"
+#include "common/hashset.h"
 
 //NOTE: may need to find an optimal delay, or interpolate or sth if needed for performance, above 20 is too much
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
@@ -20,6 +22,7 @@ int client_sockets[MAX_CLIENTS];
 pthread_mutex_t players_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t bullets_mutex = PTHREAD_MUTEX_INITIALIZER;
+CollisionHashSet collisionHashSet;
 
 BulletNode* head;
 int connected_clients_count = 0;
@@ -63,7 +66,11 @@ bool is_bullet_dead(BulletNode* bullet_node){
             players[i].rotation
         };
         collides = sat_obb_collision_check(&bbox, &otherBbox);
-        if(collides) break;
+        if(collides) {
+            players[i].hp -= BULLET_DAMAGE;
+            printf("player hp %d\n", players[i].hp);
+            break;
+        }
     }
     
     return collides;
@@ -171,15 +178,27 @@ void check_collisions() {
             };
 
             collides = sat_obb_collision_check(&bbox, &otherBbox);
-            if(collides){
-                ++collisionCount;
-          //      printf("%d collides with %d\n", players[i].id, players[j].id);
-           //     printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
-            }
             collides << j;
             collisionMatrix |= collides;
+            int current_time = (int)time(NULL);
+            int time_difference = current_time - getHashsetValue(&collisionHashSet, collisionMatrix);
+            if(collides &&  time_difference > 5){
+                ++collisionCount;
+                players[j].hp -= BOAT_COLLISION_DAMAGE;
+                players[i].hp -= BOAT_COLLISION_DAMAGE;
+                players[i].collision_byte = collisionMatrix;
+                players[j].collision_byte = collisionMatrix;
+                putHashsetValue(&collisionHashSet, players[i].collision_byte, current_time);      
+               printf("%d collides with %d\n", players[i].id, players[j].id);
+               printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
+               printf("Collision matrix %c\n", collisionMatrix);
+               printf("time difference: %d\n", time_difference);
+            }
+            
+
         }
        // printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
+ 
     }
 }
 
@@ -326,6 +345,7 @@ void *client_handler(void *arg) {
         }
 
         pthread_mutex_lock(&players_mutex);
+        update.hp = players[client_id].hp;
         update.action = NO_ACTION;
         players[client_id] = update;
         pthread_mutex_unlock(&players_mutex);
@@ -365,6 +385,7 @@ void *broadcast_loop(void *arg) {
 int initialize_server(int *server_socket) {
     struct sockaddr_in server_address;
 
+    initHashSet(&collisionHashSet);
     // Define data headers
     for(int i = 0; i < MAX_CLIENTS; ++i){
         players[i].header = PLAYER_DYNAMIC_DATA_HEADER;

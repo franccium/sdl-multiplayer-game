@@ -42,6 +42,8 @@
 #define BULLET_DAMAGE 20
 #define BOAT_COLLISION_DAMAGE 30
 
+#define MAX_HASHSET_SIZE 25
+
 typedef struct {
     unsigned char header; // 0 for player position
     char id;

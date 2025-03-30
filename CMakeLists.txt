@@ -16,6 +16,8 @@ set(COMMON_SOURCES
     src/common/client_common.h
     src/common/collisions.h
     src/common/collisions.c
+    src/common/hashset.h
+    src/common/hashset.c
 )
 
 add_executable(server

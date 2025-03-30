@@ -94,6 +94,7 @@ void receive_server_data(int client_socket) {
 
             memcpy(players_last, players, sizeof(players));
             memcpy(players, updated_players, sizeof(updated_players));
+            local_player.hp = players[local_player.id].hp;
             break;
 
         case BULLET_HEADER:
@@ -174,6 +175,7 @@ void *client_communication(void *arg) {
             perror("Send failed");
             break;
         } else {
+            printf("lcoal's player hp: %d", local_player.hp);
             // printf("sent (no action)\n");
             if(local_player.action == SHOOT_LEFT || local_player.action == SHOOT_RIGHT) {
                 shoot_timer = SHOOT_COOLDOWN;
