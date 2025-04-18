@@ -11,6 +11,7 @@
 #include "common/common.h"
 #include "common/collisions.h"
 #include "common/hashset.h"
+#include "bullet_hell_mode.h"
 
 //NOTE: may need to find an optimal delay, or interpolate or sth if needed for performance, above 20 is too much
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
@@ -30,6 +31,11 @@ int server_busy = 0;
 int bullets_count = 0;
 unsigned char bid = 1; //NOTE: the client's buffer size can only a limited amount of bullets anyways, so if we really want more we either increase buffer size or send them in batches
 
+volatile int spawn_vortex_bullets = 0;
+int bullet_vortex_bullet_delay = 1;
+clock_t last_bullet_vortex_spawn_time = 0;
+
+
 int health_check(int exp, const char *msg) {
     if (exp == -1) {
         perror(msg);
@@ -41,21 +47,22 @@ int health_check(int exp, const char *msg) {
 
 void spawn_player_random_pos(int socket_id) {
     players[socket_id].x = MIN_SPAWN_X + rand() % (WINDOW_WIDTH - MIN_SPAWN_X);
-    players[socket_id].y = MIN_SPAWN_Y + rand() % (WINDOW_WIDTH - MIN_SPAWN_Y);
+    players[socket_id].y = MIN_SPAWN_Y + rand() % (WINDOW_HEIGHT - MIN_SPAWN_Y);
 }
 
 
 bool is_bullet_dead(BulletNode* bullet_node){
     //check for dimensions
+    Bullet* bullet = &bullet_node->bullet;
     float tolerance = BULLET_SPRITE_WIDTH + 16.0f; // dont want them to disappear before going fully out of bounds
-    if (bullet_node->bullet.y > WINDOW_HEIGHT + tolerance || bullet_node->bullet.y < -tolerance
-        || bullet_node->bullet.x > WINDOW_WIDTH - tolerance || bullet_node->bullet.x < -tolerance) {
+    if (bullet->y > WINDOW_HEIGHT + tolerance || bullet->y < -tolerance
+        || bullet->x > WINDOW_WIDTH - tolerance || bullet->x < -tolerance) {
 
             printf("\nkilled a bullet %d\n", bullets_count);
             return true;
         }
     RotatedRect bbox = {
-        { bullet_node->bullet.x, bullet_node->bullet.y },
+        { bullet->x, bullet->y },
         { BULLET_HITBOX_WIDTH / 2.0f, BULLET_HITBOX_HEIGHT / 2.0f },
         0.0f
     };
@@ -74,7 +81,7 @@ bool is_bullet_dead(BulletNode* bullet_node){
         };
         collides = sat_obb_collision_check(&bbox, &otherBbox, NULL);
         if(collides) {
-            players[i].hp -= BULLET_DAMAGE;
+            players[i].hp -= bullet->dmg;
             players[i].collision_byte |= BULLET_COLLISION_MASK;
             printf("player hp %d | collision byte: %d\n", players[i].hp, players[i].collision_byte);
             break;
@@ -84,6 +91,7 @@ bool is_bullet_dead(BulletNode* bullet_node){
     return collides;
 }
 
+
 void get_bullet_direction(vec2 direction, Player *player) {
     // since player action is 1 for right and -1 for left, we just do this
     float angle = player->rotation + player->action * (PI / 2.0f);
@@ -91,7 +99,8 @@ void get_bullet_direction(vec2 direction, Player *player) {
     direction[1] = sinf(angle);
 }
 
-void add_bullet(Player* shooter){
+void add_bullet(Player* shooter, vec2 direction){
+    if(bullets_count > MAX_BULLETS_ALLOWED) return;
     BulletNode* new_node =(BulletNode*)malloc(sizeof(BulletNode)); 
     if (!new_node) {
         perror("Memory allocation failed");
@@ -101,11 +110,13 @@ void add_bullet(Player* shooter){
     new_bullet.x = shooter->x;
     new_bullet.y = shooter->y;
     new_bullet.header = BULLET_HEADER;
-    vec2 direction;
+    new_bullet.dmg = shooter->id == SERVER_SPAWNED_BULLET ? SERVER_SPAWNED_BULLET_DAMAGE : PLAYER_SPAWNED_BULLET_DAMAGE;
     new_node->next = NULL; 
     new_node->shooter_id = shooter->id; 
+    new_node->direction[0] = direction[0];
+    new_node->direction[1] = direction[1];
     memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
-    get_bullet_direction(new_node->direction, shooter);
+
     new_node->bullet.id = bid;
     ++bid;
     if (head){
@@ -119,6 +130,20 @@ void add_bullet(Player* shooter){
     bullets_count += 1;
     //printf("thats many bullets %d", bullets_count);
 }
+
+
+void update_bullet_vortex() {
+    if(!spawn_vortex_bullets) return;
+    
+    clock_t current_time = clock();
+    int time_difference = (int)((current_time - last_bullet_vortex_spawn_time) * 1000 / CLOCKS_PER_SEC);
+    
+    if (time_difference > bullet_vortex_bullet_delay) {
+        spawn();
+        last_bullet_vortex_spawn_time = current_time;
+    }
+}
+
 
 void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
     if (!bullet_node) return;
@@ -136,6 +161,8 @@ void update_bullets(){
         players[i].collision_byte &= PLAYER_COLLISION_BITS; 
     }
     pthread_mutex_lock(&bullets_mutex);
+    update_bullet_vortex();
+
     BulletNode* current = head;
     BulletNode* last = NULL;
     while(current){
@@ -392,7 +419,9 @@ void *client_handler(void *arg) {
             else {
                 pthread_mutex_lock(&bullets_mutex);
                 printf("from %d received action %d -- ", update.id, update.action);
-                add_bullet(&update);
+                vec2 dir;
+                get_bullet_direction(dir, &update);
+                add_bullet(&update, dir);
                 //printf("new bullet");
                 pthread_mutex_unlock(&bullets_mutex);
             }
@@ -467,11 +496,36 @@ int initialize_server(int *server_socket) {
     return 0;
 }
 
+void *terminal_input_handler(void *arg) {
+    char input[256];
+    while (1) {
+        if (fgets(input, sizeof(input), stdin) != NULL) {
+            // Check for specific input and set the flag
+            if (strncmp(input, "chaos", 4) == 0) {
+                spawn_vortex_bullets = 1;
+                printf("Bullet hell mode activated!\n");
+            } else if (strncmp(input, "nochaos", 6) == 0) {
+                spawn_vortex_bullets = 0;
+                printf("Bullet hell mode disabled!\n");
+            } else if (strncmp(input, "plus", 4) == 0) {
+                add_vortex();
+            } else if (strncmp(input, "min", 3) == 0) {
+                remove_vortex();
+            }   
+            else {
+                printf("Unknown command: %s", input);
+            }
+        }
+    }
+    return NULL;
+}
+
 
 int main() {
     int server_socket, *client_socket;
     struct sockaddr_in server_address, client_address;
     socklen_t addr_len = sizeof(client_address);
+    srand(time(NULL));
 
     memset(client_sockets, UNUSED_SOCKET_ID, sizeof(client_sockets));
     memset(players, 0, sizeof(players));
@@ -481,10 +535,15 @@ int main() {
         fprintf(stderr, "Server initialization failed\n");
         return 1;
     }
+    init_vortex();
 
     pthread_t bcast_tid;
     pthread_create(&bcast_tid, NULL, broadcast_loop, NULL);
     pthread_detach(bcast_tid);
+
+    pthread_t terminal_tid;
+    pthread_create(&terminal_tid, NULL, terminal_input_handler, NULL);
+    pthread_detach(terminal_tid);
 
     while (1) {
         client_socket = malloc(sizeof(int));

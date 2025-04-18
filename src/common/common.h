@@ -15,6 +15,7 @@
 
 #define BUFFER_SIZE 2048 //! can fit up to 200 bullets
 #define MAX_BULLETS_PER_BUFFER BUFFER_SIZE / sizeof(Bullet)
+#define MAX_BULLETS_ALLOWED MAX_BULLETS_PER_BUFFER - 256
 #define PLAYER_DYNAMIC_SIZE 20
 
 #define PLAYER_DYNAMIC_DATA_HEADER 0
@@ -28,8 +29,8 @@
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
-#define MIN_SPAWN_X 100
-#define MIN_SPAWN_Y 100
+#define MIN_SPAWN_X 250
+#define MIN_SPAWN_Y 150
 
 #define BULLET_SPEED 1.5f
 #define BULLET_COUNT_INDEX 0
@@ -47,8 +48,10 @@
 #define DEAD_PLAYER_POS_Y -300.0f
 
 #define INITIAL_PLAYER_HP 100
-#define BULLET_DAMAGE 20
 #define BOAT_COLLISION_DAMAGE 30
+#define SERVER_SPAWNED_BULLET 6
+#define SERVER_SPAWNED_BULLET_DAMAGE 4
+#define PLAYER_SPAWNED_BULLET_DAMAGE 15
 
 #define MAX_HASHSET_SIZE 25
 
@@ -73,6 +76,7 @@ typedef struct{
     unsigned char header; // 2 for bullet
     unsigned int id;
     float x, y;
+    int dmg;
 } Bullet; // Assign special value for a destroyed bullet,
 //  remember to assign a specific header when creating new bullet object
 

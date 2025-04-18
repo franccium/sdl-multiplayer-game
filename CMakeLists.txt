@@ -22,6 +22,8 @@ set(COMMON_SOURCES
 
 add_executable(server
     ${COMMON_SOURCES}
+    src/server/bullet_hell_mode.h
+    src/server/bullet_hell_mode.c
     src/server/server.h
     src/server/server.c
 )

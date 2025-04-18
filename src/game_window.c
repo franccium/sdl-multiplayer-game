@@ -570,10 +570,10 @@ void DrawSpriteFrame(GLuint texture, float x, float y, float width, float height
     float v = row * tex_h;
 
     glBegin(GL_QUADS);
-    glTexCoord2f(u,       v);       glVertex2f(0.0f, 0.0f);
-    glTexCoord2f(u+tex_w, v);       glVertex2f(width, 0.0f);
+    glTexCoord2f(u, v); glVertex2f(0.0f, 0.0f);
+    glTexCoord2f(u+tex_w, v); glVertex2f(width, 0.0f);
     glTexCoord2f(u+tex_w, v+tex_h); glVertex2f(width, height);
-    glTexCoord2f(u,       v+tex_h); glVertex2f(0.0f, height);
+    glTexCoord2f(u, v+tex_h); glVertex2f(0.0f, height);
     glEnd();
 
     glPopMatrix();
