@@ -29,6 +29,8 @@ add_executable(server
 add_executable(client
     ${COMMON_SOURCES}
     src/client/client.c
+    src/collision_queue.h
+    src/collision_queue.c
     src/game_window.h
     src/game_window.c
 )

@@ -38,6 +38,13 @@ int health_check(int exp, const char *msg) {
     return exp;
 }
 
+
+void spawn_player_random_pos(int socket_id) {
+    players[socket_id].x = MIN_SPAWN_X + rand() % (WINDOW_WIDTH - MIN_SPAWN_X);
+    players[socket_id].y = MIN_SPAWN_Y + rand() % (WINDOW_WIDTH - MIN_SPAWN_Y);
+}
+
+
 bool is_bullet_dead(BulletNode* bullet_node){
     //check for dimensions
     float tolerance = BULLET_SPRITE_WIDTH + 16.0f; // dont want them to disappear before going fully out of bounds
@@ -77,6 +84,7 @@ bool is_bullet_dead(BulletNode* bullet_node){
 }
 
 void get_bullet_direction(vec2 direction, Player *player) {
+    // since player action is 1 for right and -1 for left, we just do this
     float angle = player->rotation + player->action * (PI / 2.0f);
     direction[0] = cosf(angle);
     direction[1] = sinf(angle);
@@ -158,7 +166,13 @@ void update_bullets(){
 
 
 void check_collisions() {
-    for (int i = 0; i < connected_clients_count; i++) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        // clear the collisions first
+        players[i].collision_byte = 0;
+    }
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] == UNUSED_SOCKET_ID) continue;
         bool collides;
         char collisionMatrix = 0;
         char collisionCount = 0;
@@ -168,7 +182,8 @@ void check_collisions() {
             players[i].rotation
         };
 
-        for(int j = 0; j < connected_clients_count; ++j) {
+        for (int j = 0; j < MAX_CLIENTS; j++) {
+            if (client_sockets[j] == UNUSED_SOCKET_ID) continue;
             if(i == j) continue;
 
             RotatedRect otherBbox = {
@@ -186,19 +201,32 @@ void check_collisions() {
                 ++collisionCount;
                 players[j].hp -= BOAT_COLLISION_DAMAGE;
                 players[i].hp -= BOAT_COLLISION_DAMAGE;
-                players[i].collision_byte = collisionMatrix;
-                players[j].collision_byte = collisionMatrix;
+                players[i].collision_byte |= collisionMatrix;
+                players[j].collision_byte |= collisionMatrix;
                 putHashsetValue(&collisionHashSet, players[i].collision_byte, current_time);      
-               printf("%d collides with %d\n", players[i].id, players[j].id);
-               printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
-               printf("Collision matrix %c\n", collisionMatrix);
-               printf("time difference: %d\n", time_difference);
+                printf("%d collides with %d\n", players[i].id, players[j].id);
+                printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
+                printf("Collision matrix %c\n", collisionMatrix);
+                printf("time difference: %d\n", time_difference);
             }
             
 
         }
        // printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
  
+    }
+}
+
+void kill_player(int socket_id) {
+
+}
+
+void handle_player_death() {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] == UNUSED_SOCKET_ID) continue;
+        if(players[i].hp <= 0) {
+            kill_player(i);
+        }
     }
 }
 
@@ -249,7 +277,8 @@ void broadcast_players() {
         }
     }
 #if PRINT_SENT_DYNAMIC_DATA
-    for(int j = 0; j < connected_clients_count; j++) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] == UNUSED_SOCKET_ID) continue;
         printf("sent H:%d id:%d, {%f, %f, %f}\n", players[j].header, players[j].id, players[j].x, players[j].y, players[j].rotation);
     }
 #endif
@@ -263,8 +292,9 @@ void broadcast_new_player(int new_player_index) {
         if (client_sockets[i] != UNUSED_SOCKET_ID && i != new_player_index) {
             send(client_sockets[i], &new_player_data, sizeof(PlayerStaticData), 0);
 #if PRINT_SENT_STATIC_DATA
-            for(int j = 0; j < connected_clients_count; j++) {
-                 printf("sent new player static H:%d id:%d\n", new_player_data.header, new_player_data.id);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (client_sockets[i] == UNUSED_SOCKET_ID) continue;
+                printf("sent new player static H:%d id:%d\n", new_player_data.header, new_player_data.id);
             }
 #endif
         }
@@ -306,7 +336,7 @@ void *client_handler(void *arg) {
         return NULL;
     }
     players[client_id].hp = INITIAL_PLAYER_HP;
-    send(client_socket, &players[client_id].id, sizeof(char), 0);
+    send(client_socket, &players[client_id], sizeof(Player), 0);
 
     server_busy = 1;
     
@@ -337,16 +367,23 @@ void *client_handler(void *arg) {
 #endif
 
         if(update.action) {
-            pthread_mutex_lock(&bullets_mutex);
-            printf("from %d received action %d -- ", update.id, update.action);
-            add_bullet(&update);
-            //printf("new bullet");
-            pthread_mutex_unlock(&bullets_mutex);
+            if(update.action == PLAYER_ACTION_RESPAWN) {
+                players[client_id].hp = INITIAL_PLAYER_HP;
+                spawn_player_random_pos(client_id);
+                printf("GOT RESPAWN");
+            }
+            else {
+                pthread_mutex_lock(&bullets_mutex);
+                printf("from %d received action %d -- ", update.id, update.action);
+                add_bullet(&update);
+                //printf("new bullet");
+                pthread_mutex_unlock(&bullets_mutex);
+            }
         }
 
         pthread_mutex_lock(&players_mutex);
         update.hp = players[client_id].hp;
-        update.action = NO_ACTION;
+        update.action = PLAYER_ACTION_NONE;
         players[client_id] = update;
         pthread_mutex_unlock(&players_mutex);
 
@@ -360,8 +397,7 @@ void *client_handler(void *arg) {
     pthread_mutex_unlock(&clients_mutex);
     pthread_mutex_lock(&players_mutex);
     players[client_id].id = INVALID_PLAYER_ID;
-    players[client_id].x = 0.0f;
-    players[client_id].y = 0.0f;
+    spawn_player_random_pos(client_id);
     players[client_id].rotation = 0.0f;
     pthread_mutex_unlock(&players_mutex);
     close(client_socket);
@@ -376,11 +412,11 @@ void *broadcast_loop(void *arg) {
         check_collisions();
         broadcast_players();
         broadcast_bullets();
+        handle_player_death();
         usleep(frame_delay_ms * 1000);
     }
     return NULL;
 }
-
 
 int initialize_server(int *server_socket) {
     struct sockaddr_in server_address;
@@ -392,7 +428,8 @@ int initialize_server(int *server_socket) {
         player_data[i].header = PLAYER_STATIC_DATA_HEADER;
         players[i].id = INVALID_PLAYER_ID;
         player_data[i].id = INVALID_PLAYER_ID;
-        players[i].action = NO_ACTION;
+        players[i].action = PLAYER_ACTION_NONE;
+        spawn_player_random_pos(i);
     }
     
     // Create socket

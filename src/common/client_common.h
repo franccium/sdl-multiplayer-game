@@ -8,6 +8,7 @@ extern char is_update_locked;
 extern char is_player_initialized;
 
 extern Player local_player;
+//extern Player* local_player;
 extern PlayerStaticData local_player_data;
 
 #define BULLETS_DEFAULT_CAPACITY 256
@@ -20,9 +21,11 @@ extern int bullet_capacity;
 extern void load_player_sprite(int sprite_index);
 extern char should_update_sprites;
 
-extern char can_shoot;
 extern float shoot_timer;
+extern float respawn_timer;
+extern char is_dead;
 #define SHOOT_COOLDOWN 0.2f
+#define RESPAWN_COOLDOWN 3.0f
 
 extern pthread_mutex_t client_bullets_mutex;
 

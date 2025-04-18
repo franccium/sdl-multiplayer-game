@@ -12,7 +12,7 @@
 Player players[MAX_CLIENTS];
 Player players_last[MAX_CLIENTS];
 PlayerStaticData player_data[MAX_CLIENTS];
-Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALID_PLAYER_ID, .hp=INITIAL_PLAYER_HP, .x=100, .y=100, .collision_byte=0, .rotation=0};
+Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=PLAYER_ACTION_NONE, .id=INVALID_PLAYER_ID, .hp=INITIAL_PLAYER_HP, .x=100, .y=100, .collision_byte=0, .rotation=0};
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
 
 Bullet* bullets;
@@ -24,7 +24,8 @@ char is_player_initialized = 1;
 char is_update_locked = 0;
 char should_update_sprites = 0;
 float shoot_timer = 0.0f;
-char can_shoot = 1;
+float respawn_timer = 0.0f;
+char is_dead = 0;
 int bullet_capacity = BULLETS_DEFAULT_CAPACITY;
 
 pthread_mutex_t client_bullets_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -94,11 +95,14 @@ void receive_server_data(int client_socket) {
 
             memcpy(players_last, players, sizeof(players));
             memcpy(players, updated_players, sizeof(updated_players));
+            // updating the whole local_player or using it as a pointer to the player array lags the position updates and such
             local_player.hp = players[local_player.id].hp;
+            local_player.collision_byte = players[local_player.id].collision_byte;
+
             break;
 
         case BULLET_HEADER:
-            is_update_locked = 1;
+            is_update_locked = 1; //TODO: still needed or not?
             //printf("cool it's a bullet\n");
             Bullet* info = (Bullet*)buffer;
             if (info[BULLET_COUNT_INDEX].id <= 0) {
@@ -149,6 +153,7 @@ void receive_server_data(int client_socket) {
 void *client_communication(void *arg) {
     int client_socket = *(int *)arg;
     free(arg);
+    /*
     char assigned_id = 0;
     int bytes_received = recv(client_socket, &assigned_id, sizeof(char), 0);
     if (bytes_received <= 0) {
@@ -157,9 +162,16 @@ void *client_communication(void *arg) {
         close(client_socket);
         return NULL;
     }
-    local_player.id = assigned_id;
+    local_player.id = assigned_id;*/
+    int bytes_received = recv(client_socket, &local_player, sizeof(Player), 0);
+    if (bytes_received <= 0) {
+        printf("Bytes received: %d\n", bytes_received);
+        perror("Failed to receive initial local player data");
+        close(client_socket);
+        return NULL;
+    }
     local_player.header = PLAYER_DYNAMIC_DATA_HEADER;
-    printf("Assigned ID: %d\n", assigned_id);
+    printf("Assigned ID: %d\n", local_player.id);
 
 
     is_player_initialized = 1;
@@ -167,17 +179,17 @@ void *client_communication(void *arg) {
     while (1) {
         receive_server_data(client_socket);
         // Check if there's an action and apply cooldown if needed
-        if ((shoot_timer > 0.0f)) {
-            local_player.action = NO_ACTION;
-        }
+        //if ((shoot_timer > 0.0f)) {
+           // local_player.action = PLAYER_ACTION_NONE;
+        //}
         // If there's no action, send immediately without cooldown
         if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
             perror("Send failed");
             break;
         } else {
-            printf("lcoal's player hp: %d", local_player.hp);
+            //printf("lcoal's player hp: %d", local_player.hp);
             // printf("sent (no action)\n");
-            if(local_player.action == SHOOT_LEFT || local_player.action == SHOOT_RIGHT) {
+            if(local_player.action == PLAYER_ACTION_SHOOT_LEFT || local_player.action == PLAYER_ACTION_SHOOT_RIGHT) {
                 shoot_timer = SHOOT_COOLDOWN;
             }
         }
@@ -186,7 +198,7 @@ void *client_communication(void *arg) {
         //printf("shoot action: %d\n", local_player.action);
     
         // Reset the action after sending
-        local_player.action = 0;
+        local_player.action = PLAYER_ACTION_NONE;
     
         usleep(DATA_SEND_SLEEP_TIME); // Delay between sending
     }

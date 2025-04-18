@@ -9,11 +9,15 @@
 #include "client/client.h"
 #include "game_window.h"
 #include "common/collisions.h"
+#include "collision_queue.h"
 
 #define GAME_TITLE "Bitwa Piracka"
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 #define PLAYER_SPRITE_COUNT 5
+
+CollisionQueue collisionQueue;
+
 Player players_interpolated[MAX_CLIENTS];
 Bullet bullets_interpolated[BULLETS_DEFAULT_CAPACITY]; //NOTE: if we want to fit more bullets that capacitry, this needs to be a dynamic array
 
@@ -413,6 +417,57 @@ SDL_GL_LoadTexture(SDL_Surface *surface)
     return texture;
 }
 
+
+void update_shader_data() {
+    //NOTE: the variables have to be used in a meaningful way in the shaders for the compilator not to optimise them out
+    pglUseProgramObjectARB(shaders[WATER_SHADER].program);
+    int location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_time");
+    if (location >= 0) {
+        pglUniform1fARB(location, total_time);
+    }
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_playerPos");
+    if (location >= 0) {
+        float cX = local_player.x + PLAYER_SPRITE_WIDTH / 2;
+        float cY = local_player.y + PLAYER_SPRITE_HEIGHT / 2;
+        float x = cX / 1280.0f;
+        float y = cY / 720.0f;
+        pglUniform2fARB(location, x, y);
+    }
+    //printf("found: %d", location);
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_aspectRatio");
+    if (location >= 0) {
+        float aspectRatioX = 1280.0f / 720.0f;
+        float aspectRatioY = 720.0f / 1280.0f; 
+        pglUniform2fARB(location, aspectRatioX, aspectRatioY);
+    }
+    //printf("found: %d", location);
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_foamRadiusWorld");
+    if (location >= 0) {
+        pglUniform1fARB(location, 500.0f / 1280.0f);
+    }
+
+    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_playerRotation");
+    if (location >= 0) {
+        pglUniform1fARB(location, local_player.rotation);
+    }
+
+    pglUseProgramObjectARB(0);
+
+    pglUseProgramObjectARB(shaders[BULLET_SHADER].program);
+    location = pglGetUniformLocationARB(shaders[BULLET_SHADER].program, "u_time");
+    if (location >= 0) {
+        pglUniform1fARB(location, total_time);
+    }
+    pglUseProgramObjectARB(0);
+
+    pglUseProgramObjectARB(shaders[HP_BAR_SHADER].program);
+    location = pglGetUniformLocationARB(shaders[HP_BAR_SHADER].program, "u_hpPercentage");
+    if (location >= 0) {
+        pglUniform1fARB(location, (float)local_player.hp / INITIAL_PLAYER_HP);
+    }
+    pglUseProgramObjectARB(0);
+}
+
 static void InitGL(int Width, int Height)
 {
     int windowWidth, windowHeight;
@@ -492,6 +547,26 @@ void draw_rotated_bounding_box(const RotatedRect* rect, float z) {
     glEnable(GL_TEXTURE_2D);
 }
 
+void draw_collision_effects() {
+    pglUseProgramObjectARB(shaders[BULLET_SHADER].program);
+
+    for(int i = 0; i < collisionQueue.size; ++i) {
+        int index = (collisionQueue.front + i);
+        CollisionInfo* info = &collisionQueue.data[index];
+        printf("Collision at (%f, %f) with timer %f\n", info->x, info->y, info->timer);
+        DrawSprite(bullet_texture, info->x, info->y, BULLET_SPRITE_WIDTH, 
+           BULLET_SPRITE_HEIGHT, 0.0f, PLAYER_COLLISION_MIN);
+    }
+    /*
+    float x = players_interpolated[player_id].x - PLAYER_SPRITE_WIDTH / 2;
+    float y = players_interpolated[player_id].y - PLAYER_SPRITE_HEIGHT / 2;
+    printf("collision drawn for : %d at pos : %f %f\n", player_id, x, y);
+
+    DrawSprite(bullet_texture, x, y, BULLET_SPRITE_WIDTH, 
+           BULLET_SPRITE_HEIGHT, 0.0f, PLAYER_COLLISION_MIN);*/
+    pglUseProgramObjectARB(0);
+}
+
 void draw_players() {
     glColor3f(1.0f, 1.0f, 1.0f);
     //pglUseProgramObjectARB(shaders[PLAYER_SHADER].program);
@@ -515,6 +590,13 @@ void draw_players() {
             players[i].rotation
         };
         draw_rotated_bounding_box(&bbox, 0.4f + 0.05 * i);
+        
+        printf("wohle: %d\n", players[i].collision_byte);
+        if((players[i].collision_byte >> i) & 0x01) {
+            printf("byte: %d\n", players[i].collision_byte >> i);
+            CollisionInfo info = {players[i].x, players[i].y, PLAYER_COLLISION_ANIM_TIME, COLLISION_TYPE_PLAYER};
+            enqueue_collision(&collisionQueue, info);
+        }
     }
     //pglUseProgramObjectARB(0);
 }
@@ -580,6 +662,7 @@ void draw_scene() {
     draw_water();
     draw_bullets();
     draw_players();
+    draw_collision_effects();
     draw_ui();
 
     SDL_GL_SwapWindow(window);
@@ -613,7 +696,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Couldn't initialize SDL!", SDL_GetError(), NULL);
         return SDL_APP_FAILURE;
     }
-
+    init_collision_queue(&collisionQueue);
     init_opengl();
 
     for(int i = 0; i <MAX_CLIENTS; ++i) {
@@ -708,8 +791,32 @@ void render_game() {
 }
 
 
-void update_game(float dt) {
+void update_death_state() {
+    if(local_player.hp <= 0) {
+        if(!is_dead) {
+            respawn_timer = RESPAWN_COOLDOWN;
+            is_dead = true;
+        }
+    } 
+    else is_dead = false;
+}
+
+void update_local_player(float dt) {
     const bool *state = SDL_GetKeyboardState(NULL);
+    update_death_state();
+    if (is_dead) {
+        // if is dead, process respawn action
+        if (state[SDL_SCANCODE_R]){
+            //printf("trying respawn\n");
+            if(respawn_timer < 0.0f) {
+                //printf("SENT RESPAWN");
+                local_player.action = PLAYER_ACTION_RESPAWN;
+            }
+        }
+        return;
+    }
+
+   
     float rot = local_player.rotation;
     if (state[SDL_SCANCODE_W]) {
         speed = max_speed;
@@ -725,21 +832,19 @@ void update_game(float dt) {
     if (state[SDL_SCANCODE_D]) {
         rot += rotation_speed;
     }
-    if (state[SDL_SCANCODE_Y]) { //! hp debug
-        if(shoot_timer < 0.0f) {
-            local_player.hp -= 5;
-            shoot_timer = SHOOT_COOLDOWN;
+    if (state[SDL_SCANCODE_Y]) { //! hp debug //TODO: DELETE THIS
+            local_player.hp -= 20;
             printf("HP: %d\n", local_player.hp);
-        }
     }
 
+    // if not alive, don't process this so we don't replace respawn action accidentally
     if (state[SDL_SCANCODE_Q]){
         if(shoot_timer < 0.0f)
-            local_player.action = SHOOT_RIGHT;
+            local_player.action = PLAYER_ACTION_SHOOT_RIGHT;
     }
     else if (state[SDL_SCANCODE_E]){
         if(shoot_timer < 0.0f)
-            local_player.action = SHOOT_LEFT;
+            local_player.action = PLAYER_ACTION_SHOOT_LEFT;
     }
 
     rot = fmodf(rot, 2.0f * PI);
@@ -752,66 +857,27 @@ void update_game(float dt) {
     local_player.rotation = rot;
     local_player.x += direction_x * speed * dt;
     local_player.y += direction_y * speed * dt;
+}
+
+void update_game(float dt) {
+    update_local_player(dt);
     update_players(dt);
 }
 
-void update_shader_data() {
-    //NOTE: the variables have to be used in a meaningful way for the compilator not to optimise them out
-    pglUseProgramObjectARB(shaders[WATER_SHADER].program);
-    int location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_time");
-    if (location >= 0) {
-        pglUniform1fARB(location, total_time);
-    }
-    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_playerPos");
-    if (location >= 0) {
-        float cX = local_player.x + PLAYER_SPRITE_WIDTH / 2;
-        float cY = local_player.y + PLAYER_SPRITE_HEIGHT / 2;
-        float x = cX / 1280.0f;
-        float y = cY / 720.0f;
-        pglUniform2fARB(location, x, y);
-    }
-    //printf("found: %d", location);
-    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_aspectRatio");
-    if (location >= 0) {
-        float aspectRatioX = 1280.0f / 720.0f;
-        float aspectRatioY = 720.0f / 1280.0f; 
-        pglUniform2fARB(location, aspectRatioX, aspectRatioY);
-    }
-    //printf("found: %d", location);
-    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_foamRadiusWorld");
-    if (location >= 0) {
-        pglUniform1fARB(location, 500.0f / 1280.0f);
-    }
-
-    location = pglGetUniformLocationARB(shaders[WATER_SHADER].program, "u_playerRotation");
-    if (location >= 0) {
-        pglUniform1fARB(location, local_player.rotation);
-    }
-
-    pglUseProgramObjectARB(0);
-
-    pglUseProgramObjectARB(shaders[BULLET_SHADER].program);
-    location = pglGetUniformLocationARB(shaders[BULLET_SHADER].program, "u_time");
-    if (location >= 0) {
-        pglUniform1fARB(location, total_time);
-    }
-    pglUseProgramObjectARB(0);
-
-    pglUseProgramObjectARB(shaders[HP_BAR_SHADER].program);
-    location = pglGetUniformLocationARB(shaders[HP_BAR_SHADER].program, "u_hpPercentage");
-    if (location >= 0) {
-        pglUniform1fARB(location, (float)local_player.hp / INITIAL_PLAYER_HP);
-    }
-    pglUseProgramObjectARB(0);
-}
-
-SDL_AppResult SDL_AppIterate(void *appstate) {
+void update_timers() {
     Uint32 current_time = SDL_GetTicks();
     delta_time = (current_time - previous_time) / 1000.0f;
     previous_time = current_time;
     total_time += delta_time;
     total_time = fmodf(total_time, 3600.0f);
     shoot_timer -= delta_time;
+    respawn_timer -= delta_time;
+    update_collision_queue(&collisionQueue, delta_time);
+    //printf("respawn time: %f delta: %f\n", respawn_timer, delta_time);
+}
+
+SDL_AppResult SDL_AppIterate(void *appstate) {
+    update_timers();
     update_shader_data();
 
     //if(should_update_sprites) {
