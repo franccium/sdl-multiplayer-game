@@ -1,6 +1,11 @@
 smierc gracza --> i respawn
 jakies przyspieszenie statku?
-kolizja typu wjechanie w siebie powinna odbijac
+kolizja typu wjechanie w siebie powinna odbijac:
+    odbic vector kierunku i zablokowac mocement,
+     tylko uznawac ten vector za direction
+
+KOLIZJE TERAZ DZIEJA SIE DWA RAZY
+
 visual jak kolizja jest, robiony dla gracza wykrytego w macoierzy kolizji lokalnie
 tak jak teraz rusyje to sie rysuje w sumie duzo razy na jednego gracza bo kolizje sie powtarzaja
 timer respawnu lokalnie po prostu, gracz wysyla sygnal ze zyje albo ze ma hp znowu full

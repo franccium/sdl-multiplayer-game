@@ -192,6 +192,11 @@ void *client_communication(void *arg) {
             if(local_player.action == PLAYER_ACTION_SHOOT_LEFT || local_player.action == PLAYER_ACTION_SHOOT_RIGHT) {
                 shoot_timer = SHOOT_COOLDOWN;
             }
+            if(local_player.action == PLAYER_ACTION_RESPAWN) {
+                // we shouldn't need to do this but w/e
+                local_player.x = MIN_SPAWN_X + rand() % (WINDOW_WIDTH - MIN_SPAWN_X);
+                local_player.y = MIN_SPAWN_Y + rand() % (WINDOW_WIDTH - MIN_SPAWN_Y);
+            }
         }
 
         //printf("shoot cd: %f\n", shoot_timer);

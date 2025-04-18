@@ -72,10 +72,11 @@ bool is_bullet_dead(BulletNode* bullet_node){
             { PLAYER_HITBOX_WIDTH / 2.0f, PLAYER_HITBOX_HEIGHT / 2.0f },
             players[i].rotation
         };
-        collides = sat_obb_collision_check(&bbox, &otherBbox);
+        collides = sat_obb_collision_check(&bbox, &otherBbox, NULL);
         if(collides) {
             players[i].hp -= BULLET_DAMAGE;
-            printf("player hp %d\n", players[i].hp);
+            players[i].collision_byte |= BULLET_COLLISION_MASK;
+            printf("player hp %d | collision byte: %d\n", players[i].hp, players[i].collision_byte);
             break;
         }
     }
@@ -130,6 +131,10 @@ void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever valu
 
 
 void update_bullets(){
+    for(int i = 0; i < MAX_CLIENTS; ++i) {
+        // clear the bullet collision bit
+        players[i].collision_byte &= PLAYER_COLLISION_BITS; 
+    }
     pthread_mutex_lock(&bullets_mutex);
     BulletNode* current = head;
     BulletNode* last = NULL;
@@ -164,11 +169,16 @@ void update_bullets(){
     pthread_mutex_unlock(&bullets_mutex);
 }
 
+char player_index_as_bit(int id) {
+    // id = 0 -> byte with set bit nr 0
+    return (char)(1 << (id));
+}
 
 void check_collisions() {
+    pthread_mutex_lock(&players_mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        // clear the collisions first
-        players[i].collision_byte = 0;
+        // clear the player collisions first, except for the bullet flag
+        players[i].collision_byte &= BULLET_COLLISION_MASK;
     }
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -185,6 +195,9 @@ void check_collisions() {
         for (int j = 0; j < MAX_CLIENTS; j++) {
             if (client_sockets[j] == UNUSED_SOCKET_ID) continue;
             if(i == j) continue;
+            
+            // if the collision was already registered, skip
+            if(players[i].collision_byte & player_index_as_bit(players[j].id)) continue;
 
             RotatedRect otherBbox = {
                 { players[j].x, players[j].y },
@@ -192,21 +205,23 @@ void check_collisions() {
                 players[j].rotation
             };
 
-            collides = sat_obb_collision_check(&bbox, &otherBbox);
-            collides << j;
-            collisionMatrix |= collides;
+            collides = sat_obb_collision_check(&bbox, &otherBbox, NULL);
+            collisionMatrix |= (collides << j);
             int current_time = (int)time(NULL);
             int time_difference = current_time - getHashsetValue(&collisionHashSet, collisionMatrix);
             if(collides &&  time_difference > 5){
                 ++collisionCount;
                 players[j].hp -= BOAT_COLLISION_DAMAGE;
                 players[i].hp -= BOAT_COLLISION_DAMAGE;
+                // ors instead of assinging so there are no overrides and the j player gets the collision despite its hash already registerd
                 players[i].collision_byte |= collisionMatrix;
-                players[j].collision_byte |= collisionMatrix;
+                players[j].collision_byte |= player_index_as_bit(i);
                 putHashsetValue(&collisionHashSet, players[i].collision_byte, current_time);      
+                putHashsetValue(&collisionHashSet, players[j].collision_byte, current_time);      
                 printf("%d collides with %d\n", players[i].id, players[j].id);
                 printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
-                printf("Collision matrix %c\n", collisionMatrix);
+                printf("%d's matrix %d\n", players[i].id, collisionMatrix);
+                printf("%d's collision matrix %d\n", players[j].id, players[j].collision_byte);
                 printf("time difference: %d\n", time_difference);
             }
             
@@ -215,10 +230,12 @@ void check_collisions() {
        // printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
  
     }
+    pthread_mutex_unlock(&players_mutex);
 }
 
 void kill_player(int socket_id) {
-
+    players[socket_id].x = DEAD_PLAYER_POS_X;
+    players[socket_id].y = DEAD_PLAYER_POS_Y;
 }
 
 void handle_player_death() {
@@ -369,7 +386,7 @@ void *client_handler(void *arg) {
         if(update.action) {
             if(update.action == PLAYER_ACTION_RESPAWN) {
                 players[client_id].hp = INITIAL_PLAYER_HP;
-                spawn_player_random_pos(client_id);
+                //spawn_player_random_pos(client_id);
                 printf("GOT RESPAWN");
             }
             else {
@@ -409,9 +426,9 @@ void *broadcast_loop(void *arg) {
     const int frame_delay_ms = GAME_STATE_UPDATE_FRAME_DELAY;
     while (1) {
         if(server_busy) usleep(frame_delay_ms * 1000);
+        broadcast_bullets();
         check_collisions();
         broadcast_players();
-        broadcast_bullets();
         handle_player_death();
         usleep(frame_delay_ms * 1000);
     }
