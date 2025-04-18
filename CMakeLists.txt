@@ -22,6 +22,8 @@ set(COMMON_SOURCES
 
 add_executable(server
     ${COMMON_SOURCES}
+    src/server/bullet_hell_mode.h
+    src/server/bullet_hell_mode.c
     src/server/server.h
     src/server/server.c
 )
@@ -29,6 +31,8 @@ add_executable(server
 add_executable(client
     ${COMMON_SOURCES}
     src/client/client.c
+    src/collision_queue.h
+    src/collision_queue.c
     src/game_window.h
     src/game_window.c
 )
