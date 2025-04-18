@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
@@ -11,11 +12,23 @@
 Player players[MAX_CLIENTS];
 Player players_last[MAX_CLIENTS];
 PlayerStaticData player_data[MAX_CLIENTS];
-Player local_player = {INVALID_PLAYER_ID, 100, 100};
+Player local_player = {.header=PLAYER_DYNAMIC_DATA_HEADER ,.action=0, .id=INVALID_PLAYER_ID, .hp=INITIAL_PLAYER_HP, .x=100, .y=100, .collision_byte=0, .rotation=0};
 PlayerStaticData local_player_data = {INVALID_PLAYER_ID, 0};
+
+Bullet* bullets;
+Bullet* bullets_render;
+Bullet* bullets_last;
+int existing_bullets = 0;
+
 char is_player_initialized = 1;
 char is_update_locked = 0;
 char should_update_sprites = 0;
+float shoot_timer = 0.0f;
+char can_shoot = 1;
+int bullet_capacity = BULLETS_DEFAULT_CAPACITY;
+
+pthread_mutex_t client_bullets_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 /*
 TODO:
 make a single define file for stuff like PORT, SERVER_IP, MAX_PLAYERS, sent structs (Player), etc
@@ -81,10 +94,50 @@ void receive_server_data(int client_socket) {
 
             memcpy(players_last, players, sizeof(players));
             memcpy(players, updated_players, sizeof(updated_players));
+            local_player.hp = players[local_player.id].hp;
             break;
 
         case BULLET_HEADER:
-            printf("womp womp i don't know how to handle a bullet");
+            is_update_locked = 1;
+            //printf("cool it's a bullet\n");
+            Bullet* info = (Bullet*)buffer;
+            if (info[BULLET_COUNT_INDEX].id <= 0) {
+                // get out asap before integers overflow
+                is_update_locked = 0;
+                return;
+            }
+            size_t bullets_to_copy = info[BULLET_COUNT_INDEX].id;
+            //printf("copy %ld\n", bullets_to_copy);
+            if (bullets_to_copy > bullet_capacity) {
+                printf("clients bullets overflowed >.<\n"); 
+                return; //NOTE: if we want to fit more bullets than capacitry, bullets_interpolated needs to be a dynamic array (and increased buffer size / batches for sending them)
+                size_t new_capacity = bullets_to_copy * 2;
+                printf("overflowed, resizing to %ld\n", new_capacity);
+
+                Bullet *new_bullets = realloc(bullets, sizeof(Bullet) * new_capacity);
+                Bullet *new_bullets_last = realloc(bullets_last, sizeof(Bullet) * new_capacity);
+
+                if (!new_bullets || !new_bullets_last) {
+                    perror("realloc failed");
+                    free(new_bullets);
+                    free(new_bullets_last);
+                    is_update_locked = 0;
+                    return;
+                }
+
+                bullets = new_bullets;
+                bullets_last = new_bullets_last;
+                bullet_capacity = new_capacity;
+            }
+            //todo if not over last overflowed capacity for some set time, can go back to capacity /= 2 
+            memcpy(bullets_last, bullets, sizeof(bullets)); //todo add the ones that wont be copied
+            memcpy(bullets, &info[1], bullets_to_copy * sizeof(Bullet));
+
+            //memcpy(bullets, (Bullet*)buffer, sizeof(Bullet) * bullet_capacity);
+            //printf("got bullets : %d\n", existing_bullets);
+            existing_bullets = info[BULLET_COUNT_INDEX].id;
+
+            is_update_locked = 0;
             break;
 
         default:
@@ -113,14 +166,29 @@ void *client_communication(void *arg) {
 
     while (1) {
         receive_server_data(client_socket);
+        // Check if there's an action and apply cooldown if needed
+        if ((shoot_timer > 0.0f)) {
+            local_player.action = NO_ACTION;
+        }
+        // If there's no action, send immediately without cooldown
         if (send(client_socket, &local_player, sizeof(Player), 0) < 0) {
             perror("Send failed");
             break;
-        }else{
-     //       printf("sent %d, %f, %f, %d\n", local_player.id, local_player.x, local_player.y, local_player.header);
+        } else {
+            printf("lcoal's player hp: %d", local_player.hp);
+            // printf("sent (no action)\n");
+            if(local_player.action == SHOOT_LEFT || local_player.action == SHOOT_RIGHT) {
+                shoot_timer = SHOOT_COOLDOWN;
+            }
         }
 
-        //usleep(DATA_SEND_SLEEP_TIME);
+        //printf("shoot cd: %f\n", shoot_timer);
+        //printf("shoot action: %d\n", local_player.action);
+    
+        // Reset the action after sending
+        local_player.action = 0;
+    
+        usleep(DATA_SEND_SLEEP_TIME); // Delay between sending
     }
 
     close(client_socket);
@@ -148,3 +216,4 @@ void connect_to_server() {
     pthread_create(&tid, NULL, client_communication, socket_ptr);
     pthread_detach(tid);
 }
+

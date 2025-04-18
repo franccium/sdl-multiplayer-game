@@ -5,6 +5,7 @@ uniform sampler2D tex0;
 uniform vec2 u_playerPos;
 uniform float u_foamRadiusWorld;
 uniform float u_time;
+uniform float u_playerRotation;
 
 uniform float u_timeScale;
 uniform float u_initialAmplitude;
@@ -130,7 +131,12 @@ void main()
 
     float distanceToPlayer = distance(screenPos2.xy, playerPosAdjusted);
     float foamFactor = 1.0 - smoothstep(0.0, 0.14, distanceToPlayer);
+    vec2 directionToPlayer = playerPosAdjusted - screenPos2.xy;
 
+    float l4 = fbm(screenPos * 4.0 + directionToPlayer * u_time * 5.0);
+    vec4 aaa = vec4(l4 * vec3(1.0, 1.0, 1.0), 1.0);
+    
     vec4 finalColor = mix(fin, foamColor, foamFactor);
+    finalColor = mix(fin, aaa, foamFactor);
     gl_FragColor = finalColor;
 }

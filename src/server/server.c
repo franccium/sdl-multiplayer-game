@@ -5,10 +5,12 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <time.h>
 
 #include "server.h"
 #include "common/common.h"
 #include "common/collisions.h"
+#include "common/hashset.h"
 
 //NOTE: may need to find an optimal delay, or interpolate or sth if needed for performance, above 20 is too much
 #define GAME_STATE_UPDATE_FRAME_DELAY 10
@@ -19,8 +21,14 @@ PlayerStaticData player_data[MAX_CLIENTS];
 int client_sockets[MAX_CLIENTS];
 pthread_mutex_t players_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t bullets_mutex = PTHREAD_MUTEX_INITIALIZER;
+CollisionHashSet collisionHashSet;
+
+BulletNode* head;
 int connected_clients_count = 0;
 int server_busy = 0;
+int bullets_count = 0;
+unsigned char bid = 1; //NOTE: the client's buffer size can only a limited amount of bullets anyways, so if we really want more we either increase buffer size or send them in batches
 
 int health_check(int exp, const char *msg) {
     if (exp == -1) {
@@ -30,6 +38,125 @@ int health_check(int exp, const char *msg) {
     return exp;
 }
 
+bool is_bullet_dead(BulletNode* bullet_node){
+    //check for dimensions
+    float tolerance = BULLET_SPRITE_WIDTH + 16.0f; // dont want them to disappear before going fully out of bounds
+    if (bullet_node->bullet.y > WINDOW_HEIGHT + tolerance || bullet_node->bullet.y < -tolerance
+        || bullet_node->bullet.x > WINDOW_WIDTH - tolerance || bullet_node->bullet.x < -tolerance) {
+
+            printf("\nkilled a bullet %d\n", bullets_count);
+            return true;
+        }
+    RotatedRect bbox = {
+        { bullet_node->bullet.x, bullet_node->bullet.y },
+        { BULLET_HITBOX_WIDTH / 2.0f, BULLET_HITBOX_HEIGHT / 2.0f },
+        0.0f
+    };
+
+    //check if it has hit a ship
+    // id do it with other collision code but for now ok
+    bool collides;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if(client_sockets[i] == UNUSED_SOCKET_ID
+            || players[i].id == bullet_node->shooter_id) continue;
+
+        RotatedRect otherBbox = {
+            { players[i].x, players[i].y },
+            { PLAYER_HITBOX_WIDTH / 2.0f, PLAYER_HITBOX_HEIGHT / 2.0f },
+            players[i].rotation
+        };
+        collides = sat_obb_collision_check(&bbox, &otherBbox);
+        if(collides) {
+            players[i].hp -= BULLET_DAMAGE;
+            printf("player hp %d\n", players[i].hp);
+            break;
+        }
+    }
+    
+    return collides;
+}
+
+void get_bullet_direction(vec2 direction, Player *player) {
+    float angle = player->rotation + player->action * (PI / 2.0f);
+    direction[0] = cosf(angle);
+    direction[1] = sinf(angle);
+}
+
+void add_bullet(Player* shooter){
+    BulletNode* new_node =(BulletNode*)malloc(sizeof(BulletNode)); 
+    if (!new_node) {
+        perror("Memory allocation failed");
+        return;
+    }
+    Bullet new_bullet;
+    new_bullet.x = shooter->x;
+    new_bullet.y = shooter->y;
+    new_bullet.header = BULLET_HEADER;
+    vec2 direction;
+    new_node->next = NULL; 
+    new_node->shooter_id = shooter->id; 
+    memcpy(&new_node->bullet, &new_bullet, sizeof(Bullet));
+    get_bullet_direction(new_node->direction, shooter);
+    new_node->bullet.id = bid;
+    ++bid;
+    if (head){
+        BulletNode* next = head->next;
+        head->next = new_node;
+        new_node->next = next;
+    }
+    else{
+        head = new_node;
+    }
+    bullets_count += 1;
+    //printf("thats many bullets %d", bullets_count);
+}
+
+void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever values
+    if (!bullet_node) return;
+
+    bullet_node->bullet.x += bullet_node->direction[0] * BULLET_SPEED;
+    bullet_node->bullet.y += bullet_node->direction[1] * BULLET_SPEED;
+
+    //printf("{%f, %f}\n", bullet_node->bullet.x, bullet_node->bullet.y);
+}
+
+
+void update_bullets(){
+    pthread_mutex_lock(&bullets_mutex);
+    BulletNode* current = head;
+    BulletNode* last = NULL;
+    while(current){
+        update_bullet_position(current);
+        if (is_bullet_dead(current)){
+            bullets_count -= 1;
+            if(last){
+                last->next = current->next;
+                BulletNode* temp = current;
+                current = current->next;
+                if(temp){
+                    free(temp);
+                    temp = NULL;
+                }
+            }
+            else{
+                head = current->next;
+                BulletNode* temp = current;
+                current = current->next;
+                if(temp){
+                    free(temp);
+                    temp = NULL;
+                }
+            }
+        }
+        else{
+            last = current;
+            current = current->next;
+        }
+    }
+    pthread_mutex_unlock(&bullets_mutex);
+}
+
+
 void check_collisions() {
     for (int i = 0; i < connected_clients_count; i++) {
         bool collides;
@@ -37,7 +164,7 @@ void check_collisions() {
         char collisionCount = 0;
         RotatedRect bbox = {
             { players[i].x, players[i].y },
-            { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+            { PLAYER_HITBOX_WIDTH / 2.0f, PLAYER_HITBOX_HEIGHT / 2.0f },
             players[i].rotation
         };
 
@@ -46,21 +173,67 @@ void check_collisions() {
 
             RotatedRect otherBbox = {
                 { players[j].x, players[j].y },
-                { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
+                { PLAYER_HITBOX_WIDTH / 2.0f, PLAYER_HITBOX_HEIGHT / 2.0f },
                 players[j].rotation
             };
 
             collides = sat_obb_collision_check(&bbox, &otherBbox);
-            if(collides){
-                ++collisionCount;
-                printf("%d collides with %d\n", players[i].id, players[j].id);
-                printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
-            }
             collides << j;
             collisionMatrix |= collides;
+            int current_time = (int)time(NULL);
+            int time_difference = current_time - getHashsetValue(&collisionHashSet, collisionMatrix);
+            if(collides &&  time_difference > 5){
+                ++collisionCount;
+                players[j].hp -= BOAT_COLLISION_DAMAGE;
+                players[i].hp -= BOAT_COLLISION_DAMAGE;
+                players[i].collision_byte = collisionMatrix;
+                players[j].collision_byte = collisionMatrix;
+                putHashsetValue(&collisionHashSet, players[i].collision_byte, current_time);      
+               printf("%d collides with %d\n", players[i].id, players[j].id);
+               printf("collision pos: %f %f ; %f %f \n", players[i].x, players[i].y, players[j].x, players[j].y);
+               printf("Collision matrix %c\n", collisionMatrix);
+               printf("time difference: %d\n", time_difference);
+            }
+            
+
         }
-        printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
+       // printf("%d collisions found for player id: %d\n", collisionCount, players[i].id);
+ 
     }
+}
+
+
+void broadcast_bullets(){    
+    pthread_mutex_lock(&clients_mutex);
+    update_bullets();
+    BulletNode* current = head;
+    Bullet readyBullets[bullets_count + 1];
+    readyBullets[0].header = BULLET_HEADER;
+    readyBullets[0].id = bullets_count;
+    int i = 1;
+    while (current) {
+        readyBullets[i] = current->bullet;
+        current = current->next;
+        ++i;
+    }
+    if(bullets_count > MAX_BULLETS_PER_BUFFER) {
+        printf("bullets can overflow the buffer, how did we get there?\n");
+        pthread_mutex_unlock(&clients_mutex);
+        return;
+    }
+    //printf("sending %d bullets", bullets_count);
+    //readyBullets[0].header += 100*bullets_count;
+    //readyBullets[0].id = bullets_count;
+
+    pthread_mutex_lock(&bullets_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (client_sockets[i] != UNUSED_SOCKET_ID) {
+            int ret = send(client_sockets[i], readyBullets, sizeof(readyBullets), 0);
+
+        }
+    }
+    pthread_mutex_unlock(&bullets_mutex);
+    pthread_mutex_unlock(&clients_mutex);
 }
 
 void broadcast_players() {
@@ -132,6 +305,7 @@ void *client_handler(void *arg) {
         close(client_socket);
         return NULL;
     }
+    players[client_id].hp = INITIAL_PLAYER_HP;
     send(client_socket, &players[client_id].id, sizeof(char), 0);
 
     server_busy = 1;
@@ -161,9 +335,22 @@ void *client_handler(void *arg) {
 #if PRINT_RECEIVED_DATA
         printf("received id:%d, {%f, %f, %f}\n", update.id, update.x, update.y, update.rotation);
 #endif
+
+        if(update.action) {
+            pthread_mutex_lock(&bullets_mutex);
+            printf("from %d received action %d -- ", update.id, update.action);
+            add_bullet(&update);
+            //printf("new bullet");
+            pthread_mutex_unlock(&bullets_mutex);
+        }
+
         pthread_mutex_lock(&players_mutex);
+        update.hp = players[client_id].hp;
+        update.action = NO_ACTION;
         players[client_id] = update;
         pthread_mutex_unlock(&players_mutex);
+
+
     }
 
     // clean up on disconnect
@@ -188,6 +375,7 @@ void *broadcast_loop(void *arg) {
         if(server_busy) usleep(frame_delay_ms * 1000);
         check_collisions();
         broadcast_players();
+        broadcast_bullets();
         usleep(frame_delay_ms * 1000);
     }
     return NULL;
@@ -197,12 +385,14 @@ void *broadcast_loop(void *arg) {
 int initialize_server(int *server_socket) {
     struct sockaddr_in server_address;
 
+    initHashSet(&collisionHashSet);
     // Define data headers
     for(int i = 0; i < MAX_CLIENTS; ++i){
         players[i].header = PLAYER_DYNAMIC_DATA_HEADER;
         player_data[i].header = PLAYER_STATIC_DATA_HEADER;
         players[i].id = INVALID_PLAYER_ID;
         player_data[i].id = INVALID_PLAYER_ID;
+        players[i].action = NO_ACTION;
     }
     
     // Create socket
@@ -244,6 +434,10 @@ int main() {
 
     while (1) {
         client_socket = malloc(sizeof(int));
+        if (client_socket == NULL) {
+            perror("Memory allocation failed");
+            continue;
+        }
         *client_socket = accept(server_socket, (struct sockaddr *)&client_address, &addr_len);
         if (*client_socket < 0) {
             perror("Accept failed");
