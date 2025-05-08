@@ -107,9 +107,9 @@ GLuint bullet_smoke_texture;
 GLuint respawn_timer_texture;
 
 void init_opengl() {
-    SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
-    SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 1 );
-    SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE );
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
     window = SDL_CreateWindow(GAME_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL);
     if (!window) {
@@ -127,7 +127,7 @@ void init_opengl() {
     //Use Vsync
     if(SDL_GL_SetSwapInterval(1) < 0)
     {
-        printf( "Warning: Unable to set VSync! SDL Error: %s\n", SDL_GetError() );
+        printf( "Warning: Unable to set vsync: %s\n", SDL_GetError() );
     }
 
     InitShaders();
@@ -169,7 +169,7 @@ char* load_shader_file(const char* shader_file_path) {
         return NULL;
     }
 
-    buffer[fileSize] = '\0'; // Null-terminate the buffer
+    buffer[fileSize] = '\0';
     SDL_CloseIO(rw);
     return buffer;
 }
@@ -379,9 +379,7 @@ static void QuitShaders(void)
     }
 }
 
-/* Quick utility function for texture creation */
-static int
-power_of_two(int input)
+static int power_of_two(int input)
 {
     int value = 1;
 
@@ -391,8 +389,7 @@ power_of_two(int input)
     return value;
 }
 
-static GLuint
-SDL_GL_LoadTexture(SDL_Surface *surface)
+static GLuint SDL_GL_LoadTexture(SDL_Surface *surface)
 {
     GLuint texture;
     int w, h;
@@ -400,7 +397,6 @@ SDL_GL_LoadTexture(SDL_Surface *surface)
     SDL_Rect area;
     SDL_BlendMode saved_mode;
 
-    /* Use the surface width and height expanded to powers of 2 */
     w = power_of_two(surface->w);
     h = power_of_two(surface->h);
 
@@ -410,33 +406,26 @@ SDL_GL_LoadTexture(SDL_Surface *surface)
         return 0;
     }
 
-    /* Save the alpha blending attributes */
     SDL_GetSurfaceBlendMode(surface, &saved_mode);
     SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_NONE);
 
-    /* Copy the surface into the GL texture image */
     area.x = 0;
     area.y = 0;
     area.w = surface->w;
     area.h = surface->h;
     SDL_BlitSurface(surface, &area, image, &area);
 
-    /* Restore the alpha blending attributes */
     SDL_SetSurfaceBlendMode(surface, saved_mode);
 
-    /* Create an OpenGL texture for the image */
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->pixels);
-    SDL_DestroySurface(image); /* No longer needed */
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->pixels);
+    SDL_DestroySurface(image);
 
     return texture;
 }
-
 
 void update_shader_data() {
     //NOTE: the variables have to be used in a meaningful way in the shaders for the compilator not to optimise them out
@@ -981,10 +970,6 @@ void update_local_player(float dt) {
             rot += rotation_speed;
         }
     }
-    if (state[SDL_SCANCODE_Y]) { //! hp debug //TODO: DELETE THIS
-            local_player.hp -= 20;
-            printf("HP: %d\n", local_player.hp);
-    }
 
     // if not alive, don't process this so we don't replace respawn action accidentally
     if (state[SDL_SCANCODE_Q]){
@@ -1033,7 +1018,6 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     for(int i = 0; i < MAX_CLIENTS; ++i) {
         if(players[i].id == INVALID_PLAYER_ID) continue;
         if(player_texture_map[i] != INVALID_PLAYER_TEXTURE) continue;
-        //TODO: breaks after 2 players
         if(player_data[i].sprite_id != players[i].id) player_data[i].sprite_id = players[i].id;
         load_player_sprite(player_data[i].sprite_id);
     }
