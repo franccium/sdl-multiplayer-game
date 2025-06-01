@@ -188,7 +188,7 @@ void *client_communication(void *arg) {
             break;
         } else {
             //printf("lcoal's player hp: %d", local_player.hp);
-            // printf("sent (no action)\n");
+            //printf("sent (no action)\n");
             if(local_player.action == PLAYER_ACTION_SHOOT_LEFT || local_player.action == PLAYER_ACTION_SHOOT_RIGHT) {
                 shoot_timer = SHOOT_COOLDOWN;
             }
@@ -200,7 +200,7 @@ void *client_communication(void *arg) {
         }
 
         //printf("shoot cd: %f\n", shoot_timer);
-        //printf("shoot action: %d\n", local_player.action);
+        //if(local_player.action != 0) printf("shoot action: %d\n", local_player.action);
     
         // Reset the action after sending
         local_player.action = PLAYER_ACTION_NONE;

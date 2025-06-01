@@ -346,7 +346,7 @@ static bool InitShaders(void)
     GLhandleARB program = shaders[WATER_SHADER].program;
     pglUseProgramObjectARB(program);
     GLint timeScaleLocation = pglGetUniformLocationARB(program, "u_timeScale");
-    printf("found:%d", timeScaleLocation);
+    //printf("found:%d", timeScaleLocation);
     GLint amplitudeLocation = pglGetUniformLocationARB(program, "u_initialAmplitude");
     GLint amplitudeGainLocation = pglGetUniformLocationARB(program, "u_amplitudeGain");
     GLint rotationAngleLocation = pglGetUniformLocationARB(program, "u_rotationAngle");
@@ -599,14 +599,14 @@ void draw_collision_effects() {
             float x = info->x - SHIP_SMOKE_WIDTH / 2;
             float y = info->y - SHIP_SMOKE_HEIGHT / 2;
             int frame = (int)(((PLAYER_COLLISION_ANIM_TIME - info->timer) / PLAYER_COLLISION_ANIM_TIME) * SHIP_SMOKE_FRAME_COUNT) % SHIP_SMOKE_FRAME_COUNT;
-            printf("Collision at (%f, %f) with timer %f\n", info->x, info->y, info->timer);
+            //printf("Collision at (%f, %f) with timer %f\n", info->x, info->y, info->timer);
             DrawSpriteFrame(ship_smoke_texture, x, y, SHIP_SMOKE_WIDTH, 
                 SHIP_SMOKE_HEIGHT, 0.0f, PLAYER_COLLISION_MIN, frame, SHIP_SMOKE_FRAME_COUNT, 1);
         } else {
             float x = info->x - BULLET_SMOKE_WIDTH / 2;
             float y = info->y - BULLET_SMOKE_HEIGHT / 2;
             int frame = (int)(((BULLET_COLLISION_ANIM_TIME - info->timer) / BULLET_COLLISION_ANIM_TIME) * BULLET_SMOKE_FRAME_COUNT) % BULLET_SMOKE_FRAME_COUNT;
-            printf("Collision BULLET at (%f, %f) with timer %f\n", info->x, info->y, info->timer);
+            //printf("Collision BULLET at (%f, %f) with timer %f\n", info->x, info->y, info->timer);
             DrawSpriteFrame(bullet_smoke_texture, x, y, BULLET_SMOKE_WIDTH, 
                 BULLET_SMOKE_HEIGHT, 0.0f, BULLET_COLLISION_MIN, frame, BULLET_SMOKE_FRAME_COUNT, 1);
         }
@@ -643,12 +643,14 @@ void draw_players() {
             
         pglUseProgramObjectARB(0);
 
+        /*
         RotatedRect bbox = {
             { players[i].x, players[i].y },
             { PLAYER_HITBOX_WIDTH/2, PLAYER_HITBOX_HEIGHT/2 },
             players[i].rotation
         };
         draw_rotated_bounding_box(&bbox, 0.4f + 0.05 * i);
+        */
         
         if ((players[i].collision_byte & PLAYER_COLLISION_BITS) != 0) {
             printf("byte: %d\n", players[i].collision_byte >> i);
@@ -689,12 +691,14 @@ void draw_bullets() {
             
         pglUseProgramObjectARB(0);
 
+        /*
         RotatedRect bbox = {
             { bullets[i].x, bullets[i].y },
             { BULLET_HITBOX_WIDTH/2, BULLET_HITBOX_HEIGHT/2 },
             0.0f
         };
         draw_rotated_bounding_box(&bbox, 0.4f + 0.05 * i);
+        */
     }
     //pglUseProgramObjectARB(0);
 }

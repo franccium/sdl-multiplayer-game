@@ -51,13 +51,12 @@ void spawn_player_random_pos(int socket_id) {
 }
 
 
-bool is_bullet_dead(BulletNode* bullet_node){
+bool is_bullet_dead(BulletNode* bullet_node) {
     //check for dimensions
     Bullet* bullet = &bullet_node->bullet;
     float tolerance = BULLET_SPRITE_WIDTH + 16.0f; // dont want them to disappear before going fully out of bounds
     if (bullet->y > WINDOW_HEIGHT + tolerance || bullet->y < -tolerance
         || bullet->x > WINDOW_WIDTH - tolerance || bullet->x < -tolerance) {
-
             printf("\nkilled a bullet %d\n", bullets_count);
             return true;
         }
@@ -155,7 +154,7 @@ void update_bullet_position(BulletNode* bullet_node) { //adjust to whatever valu
 }
 
 
-void update_bullets(){
+void update_bullets() {
     for(int i = 0; i < MAX_CLIENTS; ++i) {
         // clear the bullet collision bit
         players[i].collision_byte &= PLAYER_COLLISION_BITS; 
@@ -275,7 +274,7 @@ void handle_player_death() {
 }
 
 
-void broadcast_bullets(){    
+void broadcast_bullets() {    
     pthread_mutex_lock(&clients_mutex);
     update_bullets();
     BulletNode* current = head;
@@ -409,16 +408,15 @@ void *client_handler(void *arg) {
 #if PRINT_RECEIVED_DATA
         printf("received id:%d, {%f, %f, %f}\n", update.id, update.x, update.y, update.rotation);
 #endif
-
         if(update.action) {
+            //printf("from %d received action %d -- ", update.id, update.action);
             if(update.action == PLAYER_ACTION_RESPAWN) {
                 players[client_id].hp = INITIAL_PLAYER_HP;
                 //spawn_player_random_pos(client_id);
-                printf("GOT RESPAWN");
+                //printf("GOT RESPAWN");
             }
             else {
                 pthread_mutex_lock(&bullets_mutex);
-                printf("from %d received action %d -- ", update.id, update.action);
                 vec2 dir;
                 get_bullet_direction(dir, &update);
                 add_bullet(&update, dir);
@@ -426,13 +424,13 @@ void *client_handler(void *arg) {
                 pthread_mutex_unlock(&bullets_mutex);
             }
         }
-
+        
         pthread_mutex_lock(&players_mutex);
         update.hp = players[client_id].hp;
         update.action = PLAYER_ACTION_NONE;
         players[client_id] = update;
         pthread_mutex_unlock(&players_mutex);
-
+        //printf("from %d received hp %d -- ", update.id, update.hp);
 
     }
 
@@ -507,9 +505,9 @@ void *terminal_input_handler(void *arg) {
             } else if (strncmp(input, "nochaos", 6) == 0) {
                 spawn_vortex_bullets = 0;
                 printf("Bullet hell mode disabled!\n");
-            } else if (strncmp(input, "plus", 4) == 0) {
+            } else if (strncmp(input, "add", 3) == 0) {
                 add_vortex();
-            } else if (strncmp(input, "min", 3) == 0) {
+            } else if (strncmp(input, "rem", 3) == 0) {
                 remove_vortex();
             }   
             else {
